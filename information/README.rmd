@@ -1,0 +1,521 @@
+---
+title: "FinnPRIO Assessor - README"
+author: "FinnPRIO Development Team"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: sandstone
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+# FinnPRIO Assessor
+
+## Overview
+
+FinnPRIO Assessor is a Shiny web application for conducting plant pest risk assessments using the FinnPRIO model (Heikkila et al. 2016). The application produces assessments for Sweden, adapted from the original Finnish Food Authority model.
+
+### Purpose
+
+The application evaluates non-native plant pests across five key dimensions:
+
+1. **Entry likelihood** - Probability of pest introduction
+2. **Establishment and spread** - Potential for pest to establish and spread
+3. **Impact magnitude** - Severity of economic, environmental, and social impacts
+4. **Preventability** - Effectiveness of preventive measures
+5. **Controllability** - Feasibility of control and eradication
+
+## Latest Updates (January 2026)
+
+### New Features: Enhanced Data Management
+
+#### 1. Pest-Species Data Management
+
+**Full CRUD Operations:**
+- ✅ **View** - Browse all pests in an interactive, searchable table
+- ✅ **Create** - Add new pest species with EPPO code, GBIF taxon key, and taxonomic information
+- ✅ **Update** - Edit existing pest records with validation
+- ✅ **Delete** - Remove pests with cascade deletion of associated data
+
+**Features:**
+- **Duplicate prevention** - Validates unique scientific names, EPPO codes, and GBIF taxon keys
+- **Required field validation** - Ensures scientific name, taxonomic group, and quarantine status are provided
+- **Cascade deletion** - Automatically removes all associated assessments, answers, and simulations
+- **Warning system** - Alerts users before deleting pests with existing assessments
+
+**How to Use:**
+1. Navigate to the **Pest-species data** tab
+2. Select a pest from the table by clicking on a row
+3. Click **"Edit Selected Pest"** to modify pest information
+4. Click **"Delete Selected Pest"** to remove a pest (with confirmation)
+5. Click **"+ Add Pest"** to create a new pest entry
+
+#### 2. Assessors Data Management
+
+**Full CRUD Operations:**
+- ✅ **View** - Browse all assessors in an interactive table
+- ✅ **Create** - Add new assessors with first name, last name, and email
+- ✅ **Update** - Edit existing assessor records
+- ✅ **Delete** - Remove assessors (with data integrity protection)
+
+**Features:**
+- **Required field validation** - First and last names are mandatory
+- **Data integrity protection** - Prevents deletion of assessors with existing assessments
+- **Table display** - Shows all assessors with searchable and sortable columns
+
+**How to Use:**
+1. Navigate to the **Assessors** tab
+2. Select an assessor from the table by clicking on a row
+3. Click **"Edit Selected Assessor"** to modify assessor information
+4. Click **"Delete Selected Assessor"** to remove an assessor (only if no assessments exist)
+5. Click **"+ Add Assessor"** to create a new assessor entry
+
+### Bug Fixes
+
+#### Script 2: Delete Selected by EPPO Code
+- **Issue:** Case-sensitive EPPO code matching caused deletion failures
+- **Fix:** Implemented case-insensitive SQL query using `UPPER(eppoCode)`
+- **Impact:** Now correctly deletes pests regardless of EPPO code case
+
+#### Script 5.5: NULL Value Handling
+- **Issue:** NULL values in required pest fields (idTaxa, idQuarantineStatus, inEurope) caused app crashes
+- **Fix:** Created repair script to set default values for NULL fields
+- **Prevention:** Updated insertion scripts to always include default values
+
+#### Database Locking: Automatic Stale Session Unlock
+- **Issue:** Database remained locked if a user's session crashed or closed unexpectedly
+- **Fix:** Implemented automatic lock release for stale sessions (5-minute timeout)
+- **Impact:** Database no longer requires manual intervention to unlock after abandoned sessions
+
+**Implementation:**
+```r
+if (dbStatus$data$inUse == 1) {
+  # Check if lock is stale
+  since <- difftime(now(),
+                    as_datetime(dbStatus$data$timeStamp),
+                    units = "mins")
+  if(since > 5) { # 5 minutes - auto-unlock stale sessions
+    # Reset stale lock
+    dbExecute(con(), "UPDATE dbStatus
+                  SET inUse = 0,
+                      timeStamp = CURRENT_TIMESTAMP
+                  WHERE rowid = (SELECT MAX(rowid) FROM dbStatus);")
+    dbStatus$data <- dbReadTable(con(), "dbStatus")
+    dbStatus$dibs <- TRUE
+  } else {
+    dbStatus$dibs <- FALSE
+  }
+} else {
+  dbStatus$dibs <- TRUE
+}
+```
+
+#### File System Navigation: Working Directory Access
+- **Issue:** File chooser did not show current working directory as a quick access option
+- **Fix:** Updated `constants.R` to include working directory in volumes list
+- **Impact:** Users can now quickly navigate to the project directory when selecting database files
+
+**Updated Configuration:**
+```r
+# R/constants.R
+volumes <- c("Working Directory" = getwd(),
+             Home = fs::path_home(),
+             named_paths,
+             "My Computer" = "/")
+```
+
+#### Package Loading: Optimized global.R
+- **Issues:**
+  - Duplicate loading of `mc2d` package (loaded twice)
+  - Missing required packages (`lubridate`, `fs`)
+  - Unnecessary `force=T` parameter causing potential reinstallation issues
+  - Lack of documentation for package purposes
+- **Fixes:**
+  - Removed duplicate `library(mc2d)` call
+  - Added missing packages: `lubridate` (date/time operations), `fs` (file system)
+  - Removed `force=T` parameter from package installation
+  - Added organized documentation comments grouping packages by purpose
+  - Added informative message when installing missing packages
+- **Impact:** Cleaner, more efficient package loading with no redundancies
+
+**Optimized Package Loading:**
+```r
+required_packages <- c(
+  # Shiny framework and UI components
+  "shiny", "shinyjs", "shinyFiles", "shinythemes",
+  "shinyalert", "shinyWidgets", "DT",
+
+  # Database
+  "DBI", "RSQLite",
+
+  # Data manipulation
+  "tidyverse",    # Includes dplyr, tidyr, stringr, etc.
+  "lubridate",    # Date/time operations (now(), as_datetime())
+  "glue", "jsonlite",
+
+  # File system
+  "fs",           # For fs::path_home() in constants.R
+
+  # Statistics
+  "mc2d",         # PERT distributions for Monte Carlo simulations
+
+  # Reporting
+  "officer", "flextable"
+)
+```
+
+## Technology Stack
+
+### Core Technologies
+- **Language:** R (version 4.0+)
+- **Framework:** Shiny (web application framework)
+- **Database:** SQLite (FinnPrio_DB.db)
+
+### Key R Packages
+
+**UI Components:**
+```r
+library(shiny)          # Core Shiny framework
+library(shinyjs)        # JavaScript operations
+library(shinyFiles)     # File system access
+library(shinythemes)    # Bootstrap themes
+library(shinyalert)     # Beautiful alerts
+library(shinyWidgets)   # Additional widgets
+library(DT)             # Interactive tables
+```
+
+**Data Management:**
+```r
+library(DBI)            # Database interface
+library(RSQLite)        # SQLite driver
+library(tidyverse)      # Data manipulation (dplyr, tidyr, stringr, etc.)
+library(lubridate)      # Date/time operations ✨ *Added*
+library(glue)           # String interpolation
+library(jsonlite)       # JSON parsing
+library(fs)             # File system operations ✨ *Added*
+```
+
+**Statistics:**
+```r
+library(mc2d)           # PERT distributions for Monte Carlo
+```
+
+**Reporting:**
+```r
+library(officer)        # Word document generation
+library(flextable)      # Formatted tables
+```
+
+## Installation
+
+### Prerequisites
+
+1. **R** (version 4.0 or higher)
+2. **RStudio** (recommended)
+3. **SQLite database file** (FinnPrio_DB.db)
+
+### Package Installation
+
+```r
+# Install required packages
+install.packages(c(
+  "shiny", "shinyjs", "shinyFiles", "shinythemes",
+  "shinyalert", "shinyWidgets", "DT",
+  "DBI", "RSQLite", "tidyverse", "lubridate", "glue", "jsonlite", "fs",
+  "mc2d", "officer", "flextable"
+))
+```
+
+**Note:** The application will automatically check for and install any missing packages when you run it, thanks to the optimized `global.R` loader.
+
+### Running the Application
+
+```r
+# From the project directory
+shiny::runApp()
+
+# Or specify the port
+shiny::runApp(port = 3838)
+```
+
+**First Launch:**
+When the application starts, you'll be prompted to select a database file. The file chooser now includes quick access to:
+- ✨ **Working Directory** (new!) - Your current project folder
+- **Home** - Your home directory
+- **My Computer** - Full system access
+
+This makes it easier to locate your database file if it's in the project directory.
+
+## Application Structure
+
+### Main Files
+
+```
+FinnPRIO_dev/
+├── ui.R                    # User interface definition
+├── server.R                # Server-side logic (1900+ lines)
+├── global.R                # Package loading and initialization
+├── FinnPrio_DB.db          # SQLite database
+├── CLAUDE.md               # Developer instructions
+└── README.rmd              # This file
+```
+
+### Supporting Directories
+
+```
+├── R/                      # Helper functions
+│   ├── constants.R         # System paths and defaults
+│   ├── internal functions.R # UI rendering helpers
+│   ├── simulations.R       # Monte Carlo simulation logic
+│   └── sqlite queries.R    # SQL query templates
+├── www/                    # Web assets
+│   ├── styles.css          # Custom styling
+│   ├── template.docx       # Word report template
+│   └── instructions.html   # User documentation
+└── scripts/                # Utility scripts (0-10)
+```
+
+### Database Utilities (Root Scripts)
+
+Numbered R scripts for database management:
+
+| Script | Purpose |
+|--------|---------|
+| `0_clean_session.R` | Clear R environment |
+| `1_delete_database.R` | Database deletion utility |
+| `2_delete_selected_by_eppocode.R` | Remove pest by EPPO code ✨ *Updated* |
+| `3_inspect_database.R` | Database exploration |
+| `3.5_change_assesors.R` | Modify assessor assignments |
+| `4_excel_to_db_migration.R` | Import from Excel templates |
+| `5_populate_pests_table_db.R` | Bulk pest data import |
+| `5.5_fix_null_pest_fields.r` | Fix NULL values ✨ *New* |
+| `6_create_assesment_host.R` | Assessment-host setup |
+| `7_populate_notes_datasheet.R` | Notes field population |
+| `8_populate_pathwayshosts.R` | Pathway-host relationships |
+| `9_populate_distribution.R` | Geographic distribution data |
+| `10_merge_multiple_db.R` | Combine multiple databases |
+
+## Database Schema
+
+### Core Tables
+
+**assessments**
+- Main assessment records
+- Links pests, assessors, dates, validity status
+- Fields: `idAssessment`, `idPest`, `idAssessor`, `startDate`, `endDate`, `finished`, `valid`, `hosts`, `potentialEntryPathways`, `reference`, `notes`, `version`
+
+**pests**
+- Pest species information
+- Fields: `idPest`, `scientificName`, `eppoCode`, `gbifTaxonKey`, `vernacularName`, `synonyms`, `idTaxa`, `idQuarantineStatus`, `inEurope`
+
+**assessors** ✨ *Enhanced*
+- Assessor information
+- Fields: `idAssessor`, `firstName`, `lastName`, `email`
+
+**questions**
+- Main questionnaire items
+- Organized by groups: ENT (Entry), EST (Establishment), IMP (Impact), MAN (Manageability)
+
+**answers**
+- Responses to main questions
+- Stores min/likely/max values and justification
+
+### Relationship Tables
+
+- `entryPathways` - Assessment to pathway links
+- `threatXassessment` - Assessment to sector links
+- `pathways` - Entry pathway definitions
+- `threatenedSectors` - Impact sectors
+
+### Simulation Tables
+
+- `simulations` - Simulation run metadata
+- `simulationSummaries` - Statistical results
+
+## Assessment Workflow
+
+### 1. Database Setup
+```r
+# User selects database file via file chooser
+# Connection established
+# All reference data loaded into reactiveValues
+```
+
+### 2. Create Assessment
+1. Click **"Create Assessment"** in Assessments tab
+2. Select pest species from dropdown
+3. Select assessor
+4. Choose entry pathways
+5. Save general information
+
+### 3. Answer Questions
+Navigate through question groups:
+- **ENT** - Entry likelihood questions
+- **EST** - Establishment and spread questions
+- **IMP** - Impact magnitude questions
+- **MAN** - Manageability questions
+
+For each question, select:
+- **Minimum** value (pessimistic scenario)
+- **Likely** value (most probable)
+- **Maximum** value (optimistic scenario)
+- **Justification** (text explanation)
+
+### 4. Mark as Finished
+- Triggers completeness validation
+- Ensures all required questions answered
+- Validates pathway-specific questions if applicable
+
+### 5. Mark as Valid
+- Only one valid assessment per species allowed
+- Automatically invalidates previous valid assessments
+
+### 6. Run Simulation
+- Monte Carlo simulation (default: 50,000 iterations)
+- Uses PERT distributions fitted to min/likely/max answers
+- Generates risk scores and statistics
+
+### 7. Export Results
+- Wide table format
+- Joins all assessment data, answers, and simulation results
+- Exportable to Excel/CSV
+
+## Monte Carlo Simulations
+
+### Risk Score Calculation
+
+**Entry Score:**
+- Calculated per pathway using ENT questions
+- Scenario A (no management): `ENT1 × ENT2A × ENT3A × ENT4`
+- Scenario B (with management): `ENT1 × ENT2B × ENT3B × ENT4`
+- Multiple pathways combined using inclusion-exclusion principle
+
+**Establishment Score:**
+```r
+SPR1 = EST2 × EST3 matrix lookup
+ESTABLISHMENT = (EST1 + SPR1 + EST4) / 21
+```
+
+**Impact Score:**
+```r
+IMPACT = (w1 × (IMP1 + IMP2) + w2 × (IMP3 + IMP4)) / 9
+```
+- `w1` typically for economic impacts
+- `w2` typically for environmental/social impacts
+
+**Risk Score:**
+```r
+INVASION = ENTRY × ESTABLISHMENT
+RISK = IMPACT × INVASION
+```
+
+**Manageability Score:**
+```r
+PREVENTABILITY = max(MAN1, MAN2, MAN3) / 4
+CONTROLLABILITY = max(MAN4, MAN5) / 4
+MANAGEABILITY = min(PREVENTABILITY, CONTROLLABILITY)
+```
+
+### Simulation Parameters
+- **Iterations:** 50,000 (default)
+- **Lambda:** 1 (PERT distribution shape)
+- **Weights:** 0.5/0.5 (w1/w2 for impact calculation)
+
+## Data Validation
+
+### Pest Species Validation ✨ *New*
+- ✅ Unique scientific name (case-insensitive)
+- ✅ Unique EPPO code
+- ✅ Unique GBIF taxon key
+- ✅ Required: Scientific name, taxonomic group, quarantine status
+
+### Assessor Validation ✨ *New*
+- ✅ Required: First name, last name
+- ✅ Optional: Email address
+- ✅ Cannot delete if assessments exist
+
+### Assessment Validation
+- ✅ All required questions answered
+- ✅ All min/likely/max selections complete
+- ✅ Pathway-specific questions answered if pathways selected
+- ✅ Only one valid assessment per species
+
+## Security Features
+
+### Concurrent Access Control
+- `dbStatus` table prevents simultaneous database writes
+- Timestamp-based lock mechanism (5-minute timeout)
+- Automatic lock release for abandoned sessions
+- Save buttons disabled when database is locked
+
+### Data Integrity
+- Foreign key constraints enforce referential integrity
+- Cascade deletion prevents orphaned records
+- Transaction-safe operations
+- Validation before all database modifications
+
+## Troubleshooting
+
+### Common Issues
+
+**"Database is locked"**
+- Another user is currently writing to the database
+- **Automatic unlock:** System now auto-releases locks after 5 minutes of inactivity ✨ *Updated*
+- If still locked, verify another user is actively working
+- Previous sessions no longer cause permanent locks
+
+**"Cannot delete pest/assessor"**
+- Check for associated assessments
+- Delete or reassign assessments first
+- Use script 2 for force deletion with cascade
+
+**"App crashes on loading assessment"**
+- Check for NULL values in pest records
+- Run `5.5_fix_null_pest_fields.r` to repair
+- Verify all required fields have values
+
+**"EPPO code not found"**
+- EPPO codes are case-insensitive (fixed in latest update)
+- Verify code exists in database: `SELECT * FROM pests WHERE eppoCode = 'CODE'`
+
+## Development Notes
+
+### Adding a New Question
+1. Insert into `questions` or `pathwayQuestions` table with JSON format
+2. Update points calculation if needed
+3. Modify `simulation.R` if question affects risk calculation
+
+### Adding a New Pathway
+1. Insert into `pathways` table with appropriate group (1/2/3)
+2. No code changes needed - dynamic UI will pick it up
+
+### Modifying Simulation Logic
+1. Edit `simulation()` function in `R/simulations.R`
+2. Maintain consistency with FinnPRIO model specification
+3. Test with known assessment data to verify output
+
+## References
+
+Heikkilä, J., Hannunen, S., & Tuomola, J. (2016). FinnPRIO - A Finnish Plant Pest Risk Prioritisation Model. Finnish Food Safety Authority Evira.
+
+## Support
+
+For issues, questions, or feature requests:
+1. Check the **Instructions** tab in the application
+2. Review `CLAUDE.md` for developer guidance
+3. Contact the FinnPRIO development team
+
+## License
+
+[Specify license information here]
+
+---
+
+**Version:** 2.1
+**Last Updated:** January 29, 2026
+**Status:** Production

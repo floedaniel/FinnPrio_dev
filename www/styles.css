@@ -1,0 +1,693 @@
+/* ============================================================================
+   FinnPRIO ASSESSOR - REFINED CSS
+   Version: 38.2 - Clean, Professional Design
+   ============================================================================ */
+
+/* ============================================================================
+   1. CSS VARIABLES
+   ============================================================================ */
+:root {
+  /* Primary Blue Palette - Single hue, multiple shades */
+  --primary-900: #1e3a5f;
+  --primary-800: #2c5282;
+  --primary-700: #2b6cb0;
+  --primary-600: #3182ce;
+  --primary-500: #4299e1;
+  --primary-400: #63b3ed;
+  --primary-300: #90cdf4;
+  --primary-200: #bee3f8;
+  --primary-100: #ebf8ff;
+
+  /* Neutral Colors */
+  --gray-900: #1a202c;
+  --gray-800: #2d3748;
+  --gray-700: #4a5568;
+  --gray-600: #718096;
+  --gray-500: #a0aec0;
+  --gray-400: #cbd5e0;
+  --gray-300: #e2e8f0;
+  --gray-200: #edf2f7;
+  --gray-100: #f7fafc;
+  --white: #ffffff;
+
+  /* Semantic Colors - Muted */
+  --success: #48bb78;
+  --success-hover: #38a169;
+  --danger: #e53e3e;
+  --danger-hover: #c53030;
+  --warning: #ed8936;
+
+  /* Application Colors */
+  --bg-page: var(--gray-100);
+  --bg-card: var(--white);
+  --text-primary: var(--gray-900);
+  --text-secondary: var(--gray-700);
+  --text-muted: var(--gray-600);
+  --border-default: var(--gray-300);
+  --border-light: var(--gray-200);
+
+  /* Spacing Scale */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+
+  /* Typography Scale - Comfortable reading */
+  --font-size-xs: 0.875rem;   /* 14px */
+  --font-size-sm: 1rem;       /* 16px */
+  --font-size-base: 1.125rem; /* 18px */
+  --font-size-lg: 1.25rem;    /* 20px */
+  --font-size-xl: 1.5rem;     /* 24px */
+  --font-size-2xl: 1.875rem;  /* 30px */
+  --font-size-3xl: 2.25rem;   /* 36px */
+
+  /* Line Heights */
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+
+  /* Shadows - Subtle */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+/* ============================================================================
+   2. BASE STYLES
+   ============================================================================ */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--text-primary);
+  background-color: var(--bg-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================================
+   3. TYPOGRAPHY
+   ============================================================================ */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--gray-800);
+  font-weight: 600;
+  line-height: var(--line-height-tight);
+  margin-bottom: var(--space-lg);
+}
+
+h1 { font-size: var(--font-size-3xl); }
+h2 { font-size: var(--font-size-2xl); }
+h3 { font-size: var(--font-size-xl); }
+h4 { font-size: var(--font-size-lg); }
+h5 { font-size: var(--font-size-base); }
+h6 { font-size: var(--font-size-sm); }
+
+p {
+  margin-bottom: var(--space-md);
+  color: var(--text-primary);
+}
+
+strong {
+  font-weight: 600;
+}
+
+/* ============================================================================
+   4. LAYOUT
+   ============================================================================ */
+.container-fluid {
+  padding: var(--space-xl);
+}
+
+.row {
+  margin-bottom: var(--space-lg);
+}
+
+/* ============================================================================
+   5. NAVBAR
+   ============================================================================ */
+.navbar-default {
+  background-color: var(--primary-800);
+  border: none;
+  box-shadow: var(--shadow-md);
+  margin-bottom: 0;
+}
+
+.navbar-default .navbar-brand {
+  color: var(--white);
+  font-weight: 600;
+  font-size: var(--font-size-lg);
+}
+
+.navbar-default .navbar-nav > li > a {
+  color: rgba(255, 255, 255, 0.9);
+  padding: 16px 20px;
+  font-size: var(--font-size-base);
+  transition: background-color 0.2s ease;
+}
+
+.navbar-default .navbar-nav > li > a:hover {
+  background-color: var(--primary-700);
+  color: var(--white);
+}
+
+.navbar-default .navbar-nav > .active > a,
+.navbar-default .navbar-nav > .active > a:hover {
+  background-color: var(--primary-900);
+  color: var(--white);
+}
+
+/* ============================================================================
+   6. BUTTONS
+   ============================================================================ */
+.btn {
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-md);
+  border: none;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--primary-200);
+}
+
+/* Button Containers */
+.button-container {
+  margin: var(--space-md) 0;
+}
+
+/* Primary Action - Save */
+#save_general {
+  background-color: var(--success);
+  color: var(--white);
+  font-weight: 500;
+}
+
+#save_general:hover {
+  background-color: var(--success-hover);
+}
+
+/* Save Answers - Fixed position, understated */
+#save_answers {
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  z-index: 1000;
+  background-color: var(--success);
+  color: var(--white);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  padding: var(--space-md) var(--space-xl);
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-md);
+}
+
+#save_answers:hover {
+  background-color: var(--success-hover);
+}
+
+/* Secondary Action - Edit */
+#change_assessor,
+#edit_pest,
+#edit_assessor {
+  background-color: var(--gray-200);
+  color: var(--gray-800);
+  font-weight: 500;
+}
+
+#change_assessor:hover,
+#edit_pest:hover,
+#edit_assessor:hover {
+  background-color: var(--gray-300);
+}
+
+/* Destructive Action - Delete */
+#delete_pest,
+#delete_assessor {
+  background-color: var(--white);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  font-weight: 500;
+}
+
+#delete_pest:hover,
+#delete_assessor:hover {
+  background-color: var(--danger);
+  color: var(--white);
+}
+
+/* Default Buttons */
+.btn-default {
+  background-color: var(--primary-600);
+  color: var(--white);
+}
+
+.btn-default:hover {
+  background-color: var(--primary-700);
+  color: var(--white);
+}
+
+/* ============================================================================
+   7. FORMS
+   ============================================================================ */
+label {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-xs);
+  display: block;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="email"],
+select,
+textarea,
+.form-control {
+  background-color: var(--white);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  width: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.form-control:focus {
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px var(--primary-100);
+  outline: none;
+}
+
+textarea {
+  min-height: 100px;
+  resize: vertical;
+  line-height: var(--line-height-relaxed);
+}
+
+/* Justification Labels */
+label[for*="just"] {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--primary-800);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+/* ============================================================================
+   8. TABLES
+   ============================================================================ */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--white);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+table thead th {
+  background-color: var(--gray-100);
+  color: var(--gray-700);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: var(--space-md) var(--space-lg);
+  text-align: center;
+  border-bottom: 1px solid var(--border-default);
+}
+
+table tbody td {
+  padding: var(--space-md) var(--space-lg);
+  text-align: center;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+}
+
+table tbody tr:hover {
+  background-color: var(--gray-100);
+}
+
+table tbody td:first-child,
+table thead th:first-child {
+  text-align: left;
+}
+
+/* DataTables */
+.dataTables_wrapper {
+  padding: 0;
+  background: transparent;
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+  padding: var(--space-xs) var(--space-md);
+  margin: 0 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--white);
+  font-size: var(--font-size-sm);
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button.current {
+  background: var(--primary-600);
+  color: var(--white);
+  border-color: var(--primary-600);
+}
+
+/* ============================================================================
+   9. CARDS & SECTIONS
+   ============================================================================ */
+.card,
+.card-assessment {
+  background-color: var(--white);
+  padding: var(--space-xl);
+  margin-bottom: var(--space-xl);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
+}
+
+/* ============================================================================
+   10. SECTION HEADINGS - Unified, subtle styling
+   ============================================================================ */
+
+/* All section headings - consistent treatment */
+[id^="heading-"] {
+  background-color: var(--gray-100);
+  color: var(--gray-800);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--primary-600);
+  font-weight: 600;
+  margin-bottom: var(--space-lg);
+}
+
+/* Main section heading - slightly more prominent */
+#heading-general-info {
+  background-color: var(--primary-100);
+  border-left-color: var(--primary-700);
+  font-size: var(--font-size-xl);
+}
+
+/* Assessment section headings - subtle blue tint */
+#heading-notes,
+#heading-entry,
+#heading-establishment,
+#heading-impact,
+#heading-management,
+#heading-references {
+  background-color: var(--primary-100);
+  border-left-color: var(--primary-500);
+}
+
+/* Question headings within sections */
+h3[id*="ENT"],
+h4[id*="ENT"],
+h3[id*="EST"],
+h4[id*="EST"],
+h3[id*="IMP"],
+h4[id*="IMP"],
+h3[id*="MAN"],
+h4[id*="MAN"] {
+  background-color: var(--gray-100);
+  border-left: 3px solid var(--primary-400);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+}
+
+/* ============================================================================
+   11. QUESTION LAYOUT
+   ============================================================================ */
+
+/* Side-by-side layout for questions and justification */
+div[id$="_table_container"] {
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-xl);
+  align-items: flex-start;
+  width: 100%;
+  margin: var(--space-lg) 0;
+}
+
+div[id$="_table_container"] > .dataTables_wrapper {
+  flex: 0 0 55%;
+}
+
+/* Justification box - clean, professional */
+div[id$="_table_container"] > .shiny-input-container {
+  flex: 1 1 45%;
+  background-color: var(--white);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-default);
+}
+
+div[id$="_table_container"] > .shiny-input-container:focus-within {
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px var(--primary-100);
+}
+
+div[id$="_table_container"] > .shiny-input-container textarea {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
+}
+
+/* Pathway Questions */
+#questionariePath .m-lg {
+  display: block;
+  margin-bottom: var(--space-xl);
+}
+
+#questionariePath .m-lg .shiny-input-container {
+  background-color: var(--white);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-default);
+  margin-top: var(--space-md);
+}
+
+#questionariePath .m-lg .shiny-input-container textarea {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
+}
+
+div[id$="_table_container"] > br {
+  display: none;
+}
+
+/* Pathway Banners */
+div.flex-row h4 {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  padding: var(--space-sm) var(--space-md);
+  margin: 0;
+}
+
+/* ============================================================================
+   12. TOOLTIPS
+   ============================================================================ */
+.bubble {
+  border-bottom: 1px dotted var(--primary-500);
+  cursor: help;
+  position: relative;
+}
+
+.bubble span {
+  display: none;
+}
+
+.bubble:hover span {
+  display: inline-block;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  min-width: 280px;
+  max-width: 480px;
+  padding: var(--space-md) var(--space-lg);
+  margin-top: var(--space-sm);
+  background: var(--white);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  text-align: left;
+}
+
+/* ============================================================================
+   13. TABS
+   ============================================================================ */
+.nav-tabs {
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: var(--space-xl);
+}
+
+.nav-tabs > li > a {
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: var(--font-size-base);
+  padding: var(--space-md) var(--space-lg);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  transition: all 0.15s ease;
+  margin-bottom: -1px;
+}
+
+.nav-tabs > li > a:hover {
+  background-color: var(--gray-100);
+  border-bottom-color: var(--gray-400);
+  color: var(--text-primary);
+}
+
+.nav-tabs > li.active > a,
+.nav-tabs > li.active > a:hover {
+  color: var(--primary-700);
+  background-color: transparent;
+  border-bottom: 2px solid var(--primary-600);
+  font-weight: 600;
+}
+
+/* Pathway Tabs - Numbered, subtle color coding */
+#questionariePath .nav-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  border-bottom: none;
+  padding-bottom: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+#questionariePath .nav-tabs > li > a {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  background-color: var(--white);
+  margin-bottom: 0;
+}
+
+#questionariePath .nav-tabs > li > a:hover {
+  background-color: var(--gray-100);
+  border-color: var(--gray-400);
+}
+
+#questionariePath .nav-tabs > li.active > a,
+#questionariePath .nav-tabs > li.active > a:hover {
+  background-color: var(--primary-600);
+  color: var(--white);
+  border-color: var(--primary-600);
+  font-weight: 600;
+}
+
+/* ============================================================================
+   14. UTILITIES
+   ============================================================================ */
+.mt-10 { margin-top: 10px; }
+.mt-20 { margin-top: 20px; }
+.mb-lg { margin-bottom: var(--space-lg); }
+.m-lg { margin: var(--space-lg); }
+
+.flex-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.error-message {
+  color: var(--danger);
+  font-weight: 500;
+  font-size: var(--font-size-sm);
+}
+
+.help-text-small {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+hr.styled {
+  border: none;
+  border-top: 1px solid var(--border-light);
+  margin: var(--space-lg) 0;
+}
+
+/* ============================================================================
+   15. ACCESSIBILITY
+   ============================================================================ */
+*:focus {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
+}
+
+button:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================================
+   16. RESPONSIVE
+   ============================================================================ */
+@media (max-width: 768px) {
+  .container-fluid {
+    padding: var(--space-md);
+  }
+
+  .card {
+    padding: var(--space-lg);
+  }
+
+  div[id$="_table_container"] {
+    flex-direction: column;
+  }
+
+  div[id$="_table_container"] > .dataTables_wrapper,
+  div[id$="_table_container"] > .shiny-input-container {
+    flex: 1 1 100%;
+  }
+
+  #save_answers {
+    position: static;
+    width: 100%;
+    margin: var(--space-md) 0;
+  }
+
+  #questionariePath .nav-tabs > li > a {
+    padding: var(--space-xs) var(--space-md);
+    font-size: var(--font-size-xs);
+  }
+}
