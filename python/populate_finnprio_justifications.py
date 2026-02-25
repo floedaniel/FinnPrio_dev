@@ -430,23 +430,8 @@ def update_pathway_justification(db_path: str, id_entry_pathway: int,
 
 def get_question_specific_instructions(question_code: str, pest_name: str,
                                        pathway_name: str = None, hosts: str = None) -> str:
-    """
-    Get specific research instructions for each question.
-
-    Uses Rmd-derived JSON instructions if available, falls back to hardcoded.
-    """
-
-    # Try to use the instructions loader (Rmd-derived JSON) first
-    if INSTRUCTIONS_LOADER_AVAILABLE:
-        try:
-            prompt = _build_prompt_from_json(question_code, pest_name, pathway_name, hosts)
-            if prompt and len(prompt) > 50:  # Sanity check
-                return prompt
-        except Exception as e:
-            print(f"[Warning] Failed to load instructions from JSON for {question_code}: {e}")
-
-    # Fallback to hardcoded instructions
-    return _get_hardcoded_instructions(question_code, pest_name, pathway_name)
+    """Get research instructions from Rmd-derived JSON. Fails if unavailable."""
+    return build_justification_prompt(question_code, pest_name, pathway_name, hosts)
 
 
 def _get_hardcoded_instructions(question_code: str, pest_name: str,
