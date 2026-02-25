@@ -219,16 +219,7 @@ def build_value_selection_prompt(
     Returns:
         Formatted prompt string for GPT value selection
     """
-    q = get_question_instructions(question_code)
-
-    if not q:
-        # Minimal fallback
-        return f"""Analyze the justification for {pest_name} and select min/likely/max values.
-
-JUSTIFICATION:
-{justification}
-
-Return JSON: {{"min": "a", "likely": "b", "max": "c"}}"""
+    q = get_question_instructions(question_code)  # Raises KeyError if not found
 
     options = options_override or q.get('options', [])
     question_type = q.get('type', 'minmax')
