@@ -466,8 +466,15 @@ PEST: {pest_name}{pathway_text}
 
 CRITICAL: Answer ONLY this specific question. Do NOT include information about other topics.
 
+SCOPE LIMITATION:
+- Answer based on documented information for THIS EXACT SPECIES only
+- Do NOT extrapolate from related species, congeners, or sister taxa
+- Do NOT assume biology, hosts, or behavior based on similar species
+- If information is limited for this species, acknowledge it clearly
+- "Unknown" or "insufficient data for this species" is a valid answer
+
 RESEARCH REQUIREMENTS:
-- Base on peer-reviewed literature, official risk assessments (EPPO, EFSA, CABI)
+- Base on peer-reviewed literature, official risk assessments (VKM, Fera, EPPO, EFSA, CABI, USDA, and others)
 - Provide specific evidence with citations
 - Consider Norwegian/Nordic context (temperate to boreal climate, cold winters)
 - Acknowledge uncertainty when evidence is limited
@@ -507,8 +514,15 @@ QUESTION ({question_code}): {question_text}
 
 CRITICAL: Answer ONLY this specific question. Do NOT include information about other topics.
 
+SCOPE LIMITATION:
+- Answer based on documented information for THIS EXACT SPECIES only
+- Do NOT extrapolate from related species, congeners, or sister taxa
+- Do NOT assume biology, hosts, or behavior based on similar species
+- If information is limited for this species, acknowledge it clearly
+- "Unknown" or "insufficient data for this species" is a valid answer
+
 RESEARCH REQUIREMENTS:
-- Base on peer-reviewed literature, official risk assessments (EPPO, EFSA, CABI)
+- Base on peer-reviewed literature, official risk assessments (VKM, Fera, EPPO, EFSA, CABI, USDA, and others)
 - Provide specific evidence with citations
 - Consider Norwegian/Nordic context (temperate to boreal climate, cold winters)
 - Acknowledge uncertainty when evidence is limited
@@ -533,7 +547,6 @@ OUTPUT FORMAT:
 - DO NOT include "Introduction" sections
 - Answer the question DIRECTLY
 - Use paragraph format with proper punctuation
-- Citations in parentheses: (Author, Year)
 - Write as continuous text, not lists
 - If multiple items, write in sentence form
 

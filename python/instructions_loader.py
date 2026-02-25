@@ -150,10 +150,14 @@ QUESTION ({q['code']}): {q['text']}""")
     if hosts and question_code in host_related_questions:
         prompt_parts.append(f"""
 
-HOST PLANTS FOR THIS PEST (from database):
+DOCUMENTED HOST PLANTS FOR THIS PEST:
 {hosts}
 
-Use these specific host plants when researching host distribution, cultivation areas, and impacts in Norway.""")
+CRITICAL HOST CONSTRAINT:
+- Use ONLY hosts documented specifically for THIS pest species
+- Do NOT assume or infer hosts based on related species, congeners, or sister taxa
+- If host data for this species is limited, state "Host range not well documented" rather than extrapolating
+- Base your answer on the documented hosts listed above""")
 
     # Add options with descriptions (new format)
     options = q.get('options', [])
