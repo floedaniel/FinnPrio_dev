@@ -36,7 +36,6 @@ from instructions_loader import build_justification_prompt
 SKIP_EXISTING_JUSTIFICATION = False # True
 
 # DATABASE PATH - UPDATE THIS IF YOU ADDED PATHWAYS
-
 # CURRENT SETTING: Using AI-enhanced database (with existing justifications)
 DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel.db"
 
@@ -46,6 +45,11 @@ DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\F
 # Filter by EPPO codes (empty list = process all species)
 # Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
 EPPOCODES_TO_POPULATE = ["ANOLHO"]
+
+# Filter by question code (None = process all questions)
+# Example: QUESTION_FILTER = "EST2"  # Only process EST2
+# Pathway questions: "ENT2A", "ENT2B", "ENT3", "ENT4"
+QUESTION_FILTER = None
 
 # =============================================================================
 # API Keys - Read from files
@@ -767,8 +771,6 @@ async def main(source_db: str = DEFAULT_DB_PATH,
 
     print(f"\n📂 Source Database: {source_db}")
     print(f"📂 Skip existing justifications: {skip_existing}")
-    if question_filter:
-        print(f"🔍 Question filter: {question_filter.upper()} only")
 
     if exclude_domains is None:
         exclude_domains = EXCLUDED_DOMAINS
@@ -783,7 +785,7 @@ async def main(source_db: str = DEFAULT_DB_PATH,
     print(f"✅ Complete structure preserved")
 
     # Confirm (skip if filtering to single question or limited questions)
-    if not question_filter and (limit_questions is None or limit_questions > 5):
+    if not effective_question_filter and (limit_questions is None or limit_questions > 5):
         response = input("\nThis will make many API calls. Continue? (yes/no): ")
         if response.lower() not in ['yes', 'y']:
             print("Cancelled.")
@@ -802,6 +804,11 @@ async def main(source_db: str = DEFAULT_DB_PATH,
 
     # Determine EPPO codes to use (command-line overrides config)
     effective_eppo_codes = eppo_codes if eppo_codes else (EPPOCODES_TO_POPULATE if EPPOCODES_TO_POPULATE else None)
+
+    # Determine question filter to use (command-line overrides config)
+    effective_question_filter = question_filter if question_filter else QUESTION_FILTER
+    if effective_question_filter:
+        print(f"🔍 Question filter: {effective_question_filter.upper()} only")
 
     # Get list of assessments to process
     if assessment_id:
@@ -835,7 +842,7 @@ async def main(source_db: str = DEFAULT_DB_PATH,
             limit_questions=limit_questions,
             process_pathways=process_pathways,
             skip_existing=skip_existing,
-            question_filter=question_filter
+            question_filter=effective_question_filter
         )
 
     print("\n" + "=" * 80)
