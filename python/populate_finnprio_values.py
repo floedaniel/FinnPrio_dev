@@ -23,13 +23,16 @@ from datetime import datetime
 import openai
 from openai import AsyncOpenAI
 
+# Import instructions loader for value selection prompts
+from instructions_loader import build_value_selection_prompt
+
 ################################################################################
 # CONFIGURATION - EDIT THESE SETTINGS
 ################################################################################
 
 # Skip Existing Values
 # Set to False to overwrite existing values, True to skip answers that already have values
-SKIP_EXISTING_VALUES = True
+SKIP_EXISTING_VALUES = False
 
 # API Keys - Read from files
 OPENAI_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\chatgpt_apikey.txt"
@@ -52,7 +55,7 @@ os.environ['TAVILY_API_KEY'] = load_api_key(TAVILY_API_KEY_FILE)
 #
 # OPTION 1: Manual path (uncomment and edit the line below)
 # INPUT_DATABASE = None
-INPUT_DATABASE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\VKM Data\26.08.2024_lopende_oppdrag_plantehelse\FinnPrio databaser\Selamavit\selam_2026.db"
+INPUT_DATABASE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel_ai_enhanced_25_02_2026.db"
 # INPUT_DATABASE = r"C:/full/path/to/your/database.db"
 #
 # OPTION 2: Auto-detect (leave INPUT_DATABASE = None)
@@ -60,6 +63,10 @@ INPUT_DATABASE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\VKM Data\26.08
 #
 # OPTION 3: Command line (leave INPUT_DATABASE = None and use --db parameter)
 # python populate_finnprio_values.py --db "path/to/database.db"
+
+# Filter by EPPO codes (empty list = process all species)
+# Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
+EPPOCODES_TO_POPULATE = ["ANOLHO"]
 
 # Output: Same as input (updates in place)
 # The script modifies the input database directly, adding min/likely/max values
@@ -88,28 +95,57 @@ class ValuePopulator:
         if self.conn:
             self.conn.close()
 
-    def get_all_assessment_ids(self) -> List[int]:
-        """Get all assessment IDs in database"""
+    def get_all_assessment_ids(self, eppo_codes: List[str] = None) -> List[int]:
+        """Get all assessment IDs in database, optionally filtered by EPPO codes."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT idAssessment FROM assessments ORDER BY idAssessment")
+
+        if eppo_codes:
+            # Filter by EPPO codes (case-insensitive)
+            placeholders = ','.join(['?' for _ in eppo_codes])
+            cursor.execute(f"""
+                SELECT a.idAssessment
+                FROM assessments a
+                JOIN pests p ON a.idPest = p.idPest
+                WHERE UPPER(p.eppoCode) IN ({placeholders})
+                ORDER BY a.idAssessment
+            """, [code.upper() for code in eppo_codes])
+        else:
+            cursor.execute("SELECT idAssessment FROM assessments ORDER BY idAssessment")
+
         return [row['idAssessment'] for row in cursor.fetchall()]
+
+    def get_eppo_codes_for_assessments(self, assessment_ids: List[int]) -> List[str]:
+        """Get EPPO codes for a list of assessment IDs."""
+        if not assessment_ids:
+            return []
+        cursor = self.conn.cursor()
+        placeholders = ','.join(['?' for _ in assessment_ids])
+        cursor.execute(f"""
+            SELECT DISTINCT p.eppoCode
+            FROM assessments a
+            JOIN pests p ON a.idPest = p.idPest
+            WHERE a.idAssessment IN ({placeholders})
+        """, assessment_ids)
+        return [row['eppoCode'] for row in cursor.fetchall() if row['eppoCode']]
 
     def get_question_options(self, id_question: int, table: str = "questions") -> List[Dict]:
         """
         Get question details and options from database
 
         Returns:
-            List of option dicts with 'opt', 'text', 'points'
+            Dict with 'question', 'options', 'type', and 'code' keys
         """
         cursor = self.conn.cursor()
         if table == "questions":
+            # Include group and number to build question code
             cursor.execute(
-                "SELECT question, list, type FROM questions WHERE idQuestion = ?",
+                'SELECT question, list, type, "group", number, subgroup FROM questions WHERE idQuestion = ?',
                 (id_question,)
             )
         else:
+            # Pathway questions have group and number too
             cursor.execute(
-                "SELECT question, list FROM pathwayQuestions WHERE idPathQuestion = ?",
+                'SELECT question, list, "group", number FROM pathwayQuestions WHERE idPathQuestion = ?',
                 (id_question,)
             )
 
@@ -119,14 +155,31 @@ class ValuePopulator:
 
         question_text = row['question']
         options_json = row['list']
-        question_type = row['type'] if table == "questions" else "minmax"
+
+        if table == "questions":
+            question_type = row['type'] if row['type'] else "minmax"
+            # Build question code: e.g., "ENT1" or "IMP2.1"
+            group = row['group'] or ""
+            number = row['number'] or ""
+            subgroup = row['subgroup'] or ""
+            if subgroup:
+                question_code = f"{group}{number}.{subgroup}"
+            else:
+                question_code = f"{group}{number}"
+        else:
+            question_type = "minmax"
+            # Pathway question code: e.g., "ENT2A" or "ENT3"
+            group = row['group'] or ""
+            number = row['number'] or ""
+            question_code = f"{group}{number}"
 
         options = json.loads(options_json)
 
         return {
             'question': question_text,
             'options': options,
-            'type': question_type
+            'type': question_type,
+            'code': question_code
         }
 
     def get_pest_name(self, id_assessment: int) -> str:
@@ -148,84 +201,120 @@ class ValuePopulator:
         question_text: str,
         options: List[Dict],
         justification: str,
-        question_type: str = "minmax"
+        question_type: str = "minmax",
+        question_code: str = None
     ) -> Dict[str, str]:
         """
         Use GPT-4o to determine appropriate min/likely/max values based on justification
+
+        Args:
+            pest_name: Scientific name of the pest
+            question_text: The question text
+            options: List of option dicts with 'opt', 'text', 'points'
+            justification: The AI-generated justification to analyze
+            question_type: 'minmax' or 'boolean'
+            question_code: Optional question code (e.g., 'ENT1') for enhanced prompts
 
         Returns:
             Dict with keys 'min', 'likely', 'max' containing option codes (e.g., 'a', 'b', 'c')
         """
 
-        # Build options description
-        options_text = "\n".join([
-            f"  {opt['opt'].upper()}: {opt['text']} (points: {opt['points']})"
-            for opt in options
-        ])
+        # Try to use enhanced prompt from instructions loader (includes examples)
+        if INSTRUCTIONS_LOADER_AVAILABLE and question_code:
+            try:
+                prompt = build_value_selection_prompt(
+                    question_code, pest_name, justification, options
+                )
+                if prompt and len(prompt) > 100:
+                    # Enhanced prompt from JSON instructions
+                    pass  # Use the prompt built above
+                else:
+                    prompt = None
+            except Exception as e:
+                print(f"  [Note] Using basic prompt (instructions loader failed: {e})")
+                prompt = None
+        else:
+            prompt = None
+
+        # Fallback to basic prompt if enhanced not available
+        if not prompt:
+            prompt = self._build_basic_prompt(
+                pest_name, question_text, options, justification, question_type
+            )
+
+        return await self._call_gpt_for_values(prompt, options)
+
+    def _build_basic_prompt(
+        self,
+        pest_name: str,
+        question_text: str,
+        options: List[Dict],
+        justification: str,
+        question_type: str
+    ) -> str:
+        """Build basic prompt without Rmd-derived examples (fallback)."""
+
+        # Build FULL options text with descriptions
+        options_text = ""
+        for opt in options:
+            options_text += f"\n\n**{opt['opt'].upper()}. {opt['text']}**"
+            if opt.get('description'):
+                options_text += f"\n{opt['description']}"
 
         if question_type == "minmax":
-            prompt = f"""You are analyzing a plant pest risk assessment for {pest_name}.
+            prompt = f"""TASK: Compare the JUSTIFICATION against the ANSWER OPTIONS and select min/likely/max.
 
-QUESTION: {question_text}
+===== QUESTION =====
+{question_text}
 
-AVAILABLE OPTIONS (from lowest to highest severity/likelihood):
-{options_text}
+===== ANSWER OPTIONS ====={options_text}
 
-JUSTIFICATION TEXT:
+===== JUSTIFICATION TO EVALUATE =====
 {justification}
 
-Your task:
-1. Read the justification carefully
-2. Based on the evidence and uncertainty described, select appropriate values for:
-   - MINIMUM: The most optimistic/lowest reasonable estimate
-   - LIKELY: The most probable/expected value
-   - MAXIMUM: The most pessimistic/highest reasonable estimate
+===== YOUR TASK =====
+Compare the justification above against each answer option.
 
-3. Return ONLY a JSON object with this exact format:
-{{"min": "a", "likely": "b", "max": "c"}}
+1. Which option does the justification's MAIN CONCLUSION match? -> This is LIKELY
+2. What is the LOWEST option that could apply based on the justification? -> This is MIN
+3. What is the HIGHEST option that could apply based on the justification? -> This is MAX
 
-Guidelines:
-- Use only the option codes (a, b, c, etc.) from the available options above
-- min <= likely <= max (in terms of severity/points)
-- If uncertainty is low, min and max should be close to likely
-- If uncertainty is high, min and max should span a wider range
-- Base your selection on the evidence strength in the justification
-- Consider Norwegian/Nordic context
+RULES:
+- The justification may explicitly state an option (e.g., "A. No, it cannot") - use that
+- Match numbers in the justification to thresholds in the options
+- If the justification is certain/definitive, min and max should equal likely
+- If the justification mentions uncertainty or a range, reflect that in min/max
 
-Return ONLY the JSON object, no additional text."""
+Return ONLY: {{"min": "a", "likely": "b", "max": "c"}}"""
 
         else:  # boolean type (IMP2, IMP4)
-            # For boolean questions, there's only ONE option representing the sub-question
-            # If YES: return the option code; If NO: return null to skip this answer
             option_code = options[0]['opt'] if options else 'a'
             option_text = options[0]['text'] if options else ''
 
-            prompt = f"""You are analyzing a plant pest risk assessment for {pest_name}.
+            prompt = f"""TASK: Determine YES/NO based on the justification.
 
-BOOLEAN QUESTION: {option_text}
+===== QUESTION =====
+{option_text}
 
-AVAILABLE ANSWER:
-- Option "{option_code.upper()}": YES to this question (points: {options[0]['points'] if options else 1})
-- No option for NO (leave blank if answer is NO)
-
-JUSTIFICATION TEXT:
+===== JUSTIFICATION TO EVALUATE =====
 {justification}
 
-Your task:
-1. Read the justification carefully
-2. Based on the evidence, determine if the answer to "{option_text}" is YES or NO
-3. Return your answer:
+===== YOUR TASK =====
+Does the justification support YES or NO for this question?
 
-If YES (evidence supports this impact/effect):
-{{"min": "{option_code}", "likely": "{option_code}", "max": "{option_code}"}}
+- If justification says this impact/effect DOES occur -> YES
+- If justification says this impact/effect does NOT occur -> NO
+- If justification does not mention this topic -> NO
 
-If NO (evidence does not support this impact/effect):
-{{"min": null, "likely": null, "max": null}}
+If YES: {{"min": "{option_code}", "likely": "{option_code}", "max": "{option_code}"}}
+If NO: {{"min": null, "likely": null, "max": null}}
 
-If UNCERTAIN (mixed or unclear evidence), you can vary the values:
-{{"min": null, "likely": "{option_code}", "max": "{option_code}"}}
+Return ONLY the JSON object."""
 
-Return ONLY the JSON object, no additional text."""
+        return prompt
+
+    async def _call_gpt_for_values(self, prompt: str, options: List[Dict]) -> Dict[str, str]:
+        """Call GPT API with prompt and parse response."""
 
         try:
             response = await client.chat.completions.create(
@@ -249,17 +338,29 @@ Return ONLY the JSON object, no additional text."""
             # Parse JSON
             values = json.loads(content)
 
-            # Convert values to lowercase (GPT sometimes returns uppercase)
+            # Build mapping from points to option codes (for when GPT returns integers)
+            points_to_opt = {opt['points']: opt['opt'] for opt in options}
+            valid_opts = {opt['opt'] for opt in options}
+
+            # Convert values to lowercase and handle integers
             for key in ['min', 'likely', 'max']:
-                if key in values and values[key]:
-                    values[key] = values[key].lower()
+                if key in values and values[key] is not None:
+                    val = values[key]
+                    # Handle integer responses (GPT sometimes returns points instead of letters)
+                    if isinstance(val, int):
+                        if val in points_to_opt:
+                            values[key] = points_to_opt[val]
+                        else:
+                            # Try to convert 1->a, 2->b, etc.
+                            values[key] = chr(ord('a') + val - 1) if 1 <= val <= 26 else str(val)
+                    else:
+                        values[key] = str(val).lower()
 
             # Validate that all keys exist and values are valid option codes
             required_keys = ['min', 'likely', 'max']
             if not all(k in values for k in required_keys):
                 raise ValueError(f"Missing required keys. Got: {values.keys()}")
 
-            valid_opts = {opt['opt'] for opt in options}
             for key in required_keys:
                 # Allow None/null for boolean questions (when answer is NO)
                 if values[key] is not None and values[key] not in valid_opts:
@@ -427,7 +528,7 @@ Return ONLY the JSON object, no additional text."""
 
                 print(f"[{i}/{len(answers)}] Processing answer {id_answer}")
                 print(f"  Pest: {pest_name}")
-                print(f"  Question: {question_data['question'][:80]}...")
+                print(f"  Question ({question_data['code']}): {question_data['question'][:70]}...")
                 print(f"  Type: {question_data['type']}")
 
                 # Determine values with GPT
@@ -436,7 +537,8 @@ Return ONLY the JSON object, no additional text."""
                     question_text=question_data['question'],
                     options=question_data['options'],
                     justification=justification,
-                    question_type=question_data['type']
+                    question_type=question_data['type'],
+                    question_code=question_data['code']
                 )
 
                 if values:
@@ -475,7 +577,7 @@ Return ONLY the JSON object, no additional text."""
 
                 print(f"[{i}/{len(pathway_answers)}] Processing pathway answer {id_path_answer}")
                 print(f"  Pest: {pest_name}")
-                print(f"  Question: {question_data['question'][:80]}...")
+                print(f"  Question ({question_data['code']}): {question_data['question'][:70]}...")
 
                 # Determine values with GPT
                 values = await self.determine_values_with_gpt(
@@ -483,7 +585,8 @@ Return ONLY the JSON object, no additional text."""
                     question_text=question_data['question'],
                     options=question_data['options'],
                     justification=justification,
-                    question_type=question_data['type']
+                    question_type=question_data['type'],
+                    question_code=question_data['code']
                 )
 
                 if values:
@@ -506,7 +609,7 @@ Return ONLY the JSON object, no additional text."""
             # Restore original assessment_id
             self.assessment_id = original_id
 
-    async def populate_values(self, skip_existing: bool = True):
+    async def populate_values(self, skip_existing: bool = True, eppo_codes: List[str] = None):
         """Main function to populate all missing values"""
 
         print("\n" + "=" * 80)
@@ -519,10 +622,23 @@ Return ONLY the JSON object, no additional text."""
         self.connect()
 
         try:
+            # Determine EPPO codes to use (command-line overrides config)
+            effective_eppo_codes = eppo_codes if eppo_codes else (EPPOCODES_TO_POPULATE if EPPOCODES_TO_POPULATE else None)
+
             # Get list of assessments to process
             if self.assessment_id:
                 assessment_ids = [self.assessment_id]
                 print(f"ℹ️  Processing single assessment: {self.assessment_id}\n")
+            elif effective_eppo_codes:
+                assessment_ids = self.get_all_assessment_ids(effective_eppo_codes)
+                print(f"ℹ️  Filtering by EPPO codes: {effective_eppo_codes}")
+                print(f"    Found {len(assessment_ids)} matching assessment(s)\n")
+                # Verify all requested codes were found
+                if assessment_ids:
+                    found_codes = self.get_eppo_codes_for_assessments(assessment_ids)
+                    missing = set(c.upper() for c in effective_eppo_codes) - set(c.upper() for c in found_codes)
+                    if missing:
+                        print(f"⚠️  Warning: No assessments found for EPPO codes: {missing}\n")
             else:
                 assessment_ids = self.get_all_assessment_ids()
                 print(f"ℹ️  Processing all assessments: {len(assessment_ids)} total\n")
@@ -549,7 +665,8 @@ Return ONLY the JSON object, no additional text."""
 async def main(
     db_path: str = None,
     assessment_id: int = None,
-    skip_existing: bool = None
+    skip_existing: bool = None,
+    eppo_codes: List[str] = None
 ):
     """Main entry point"""
 
@@ -587,7 +704,7 @@ async def main(
 
     # Create populator and run
     populator = ValuePopulator(db_path, assessment_id)
-    await populator.populate_values(skip_existing=skip_existing)
+    await populator.populate_values(skip_existing=skip_existing, eppo_codes=eppo_codes)
 
 
 if __name__ == "__main__":
@@ -603,6 +720,13 @@ if __name__ == "__main__":
         "--assessment-id",
         type=int,
         help="Process only specific assessment ID"
+    )
+    parser.add_argument(
+        "--eppo-codes",
+        type=str,
+        nargs='+',
+        default=None,
+        help="Filter by EPPO codes (e.g., --eppo-codes XYLEFA ANOLGL)"
     )
     parser.add_argument(
         "--overwrite",
@@ -624,5 +748,6 @@ if __name__ == "__main__":
     asyncio.run(main(
         db_path=args.db,
         assessment_id=args.assessment_id,
-        skip_existing=skip_existing
+        skip_existing=skip_existing,
+        eppo_codes=args.eppo_codes
     ))
