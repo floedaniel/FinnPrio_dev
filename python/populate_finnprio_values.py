@@ -205,43 +205,20 @@ class ValuePopulator:
         question_code: str = None
     ) -> Dict[str, str]:
         """
-        Use GPT-4o to determine appropriate min/likely/max values based on justification
+        Use GPT-4o to determine appropriate min/likely/max values based on justification.
 
         Args:
             pest_name: Scientific name of the pest
-            question_text: The question text
+            question_text: The question text (unused, kept for compatibility)
             options: List of option dicts with 'opt', 'text', 'points'
             justification: The AI-generated justification to analyze
-            question_type: 'minmax' or 'boolean'
-            question_code: Optional question code (e.g., 'ENT1') for enhanced prompts
+            question_type: 'minmax' or 'boolean' (unused, derived from question_code)
+            question_code: Question code (e.g., 'ENT1') - required
 
         Returns:
-            Dict with keys 'min', 'likely', 'max' containing option codes (e.g., 'a', 'b', 'c')
+            Dict with keys 'min', 'likely', 'max' containing option codes
         """
-
-        # Try to use enhanced prompt from instructions loader (includes examples)
-        if INSTRUCTIONS_LOADER_AVAILABLE and question_code:
-            try:
-                prompt = build_value_selection_prompt(
-                    question_code, pest_name, justification, options
-                )
-                if prompt and len(prompt) > 100:
-                    # Enhanced prompt from JSON instructions
-                    pass  # Use the prompt built above
-                else:
-                    prompt = None
-            except Exception as e:
-                print(f"  [Note] Using basic prompt (instructions loader failed: {e})")
-                prompt = None
-        else:
-            prompt = None
-
-        # Fallback to basic prompt if enhanced not available
-        if not prompt:
-            prompt = self._build_basic_prompt(
-                pest_name, question_text, options, justification, question_type
-            )
-
+        prompt = build_value_selection_prompt(question_code, pest_name, justification, options)
         return await self._call_gpt_for_values(prompt, options)
 
     def _build_basic_prompt(
