@@ -49,7 +49,7 @@ EPPOCODES_TO_POPULATE = ["ANOLHO"]
 # Filter by question code (None = process all questions)
 # Example: QUESTION_FILTER = "EST2"  # Only process EST2
 # Pathway questions: "ENT2", "ENT2B", "ENT3", "ENT4"
-QUESTION_FILTER = "ENT2"
+QUESTION_FILTER = "EST2:"
 
 # =============================================================================
 # API Keys - Read from files
@@ -636,10 +636,12 @@ async def process_assessment(db_path: str, assessment_id: int = None,
 
     if question_filter:
         # Filter to specific question code (e.g., EST2, ENT2A)
-        answers = [a for a in answers if a['code'].upper() == question_filter.upper()]
-        print(f"🔍 Filtering to question: {question_filter.upper()}")
+        # Strip trailing dots for comparison (codes stored as "EST2." but user enters "EST2")
+        filter_code = question_filter.upper().rstrip('.')
+        answers = [a for a in answers if a['code'].upper().rstrip('.') == filter_code]
+        print(f"🔍 Filtering to question: {filter_code}")
         if not answers:
-            print(f"⚠️  No matching regular question found for {question_filter}")
+            print(f"⚠️  No matching regular question found for {filter_code}")
 
     if limit_questions:
         answers = answers[:limit_questions]
@@ -703,10 +705,11 @@ async def process_assessment(db_path: str, assessment_id: int = None,
 
             # Filter pathway questions if question_filter is set
             if question_filter:
+                filter_code = question_filter.upper().rstrip('.')
                 pathway_questions = [pq for pq in pathway_questions
-                                    if pq['code'].upper() == question_filter.upper()]
+                                    if pq['code'].upper().rstrip('.') == filter_code]
                 if not pathway_questions:
-                    print(f"⚠️  No matching pathway question found for {question_filter}")
+                    print(f"⚠️  No matching pathway question found for {filter_code}")
 
             total = len(pathways) * len(pathway_questions)
             count = 0
