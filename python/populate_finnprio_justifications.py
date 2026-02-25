@@ -48,8 +48,8 @@ EPPOCODES_TO_POPULATE = ["ANOLHO"]
 
 # Filter by question code (None = process all questions)
 # Example: QUESTION_FILTER = "EST2"  # Only process EST2
-# Pathway questions: "ENT2A", "ENT2B", "ENT3", "ENT4"
-QUESTION_FILTER = None
+# Pathway questions: "ENT2", "ENT2B", "ENT3", "ENT4"
+QUESTION_FILTER = "ENT2"
 
 # =============================================================================
 # API Keys - Read from files
@@ -778,6 +778,9 @@ async def main(source_db: str = DEFAULT_DB_PATH,
     if exclude_domains:
         print(f"\n⛔ Excluded: {', '.join(exclude_domains)}")
 
+    # Determine question filter to use (command-line overrides config)
+    effective_question_filter = question_filter if question_filter else QUESTION_FILTER
+
     # Copy database
     working_db = copy_database(source_db, output_dir)
 
@@ -805,8 +808,6 @@ async def main(source_db: str = DEFAULT_DB_PATH,
     # Determine EPPO codes to use (command-line overrides config)
     effective_eppo_codes = eppo_codes if eppo_codes else (EPPOCODES_TO_POPULATE if EPPOCODES_TO_POPULATE else None)
 
-    # Determine question filter to use (command-line overrides config)
-    effective_question_filter = question_filter if question_filter else QUESTION_FILTER
     if effective_question_filter:
         print(f"🔍 Question filter: {effective_question_filter.upper()} only")
 
