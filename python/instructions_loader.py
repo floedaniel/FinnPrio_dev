@@ -271,30 +271,25 @@ Return ONLY: {{"min": "a", "likely": "b", "max": "c"}}"""
         sub_questions = q.get('sub_questions', [])
         sub_q_text = ""
         if sub_questions:
-            sub_q_text = "\n\nSUB-QUESTIONS:\n"
+            sub_q_text = "\nSUB-QUESTIONS:\n"
             for sq in sub_questions:
                 sub_q_text += f"- {sq['code']}: {sq['text']}\n"
                 if sq.get('description'):
                     sub_q_text += f"  {sq['description']}\n"
 
         option_code = options[0]['opt'] if options else 'a'
-        option_text = options[0]['text'] if options else 'Yes'
 
-        prompt = f"""TASK: Determine YES/NO based on the justification.
+        prompt = f"""Determine YES/NO for this impact question.
 
-===== QUESTION =====
-{q['code']}: {q['text']}
+QUESTION ({q['code']}): {q['text']}
 {sub_q_text}
 {guidance_text}
-===== JUSTIFICATION TO EVALUATE =====
+JUSTIFICATION TO ANALYZE:
 {justification}
 
-===== YOUR TASK =====
-Does the justification support YES or NO for this question?
-
-- If justification says this impact/effect DOES occur -> YES
-- If justification says this impact/effect does NOT occur -> NO
-- If justification does not mention this topic -> NO
+TASK:
+- YES if the justification indicates this impact/effect occurs
+- NO if the justification says it does not occur or does not mention it
 
 If YES: {{"min": "{option_code}", "likely": "{option_code}", "max": "{option_code}"}}
 If NO: {{"min": null, "likely": null, "max": null}}
