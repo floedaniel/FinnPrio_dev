@@ -613,7 +613,8 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                              exclude_domains: List[str] = None,
                              limit_questions: int = None,
                              process_pathways: bool = True,
-                             skip_existing: bool = True):
+                             skip_existing: bool = True,
+                             question_filter: str = None):
     """Process assessment: regular questions + pathway questions."""
 
     print("\n📚 Loading assessment data...")
@@ -628,6 +629,13 @@ async def process_assessment(db_path: str, assessment_id: int = None,
     answers = assessment_info['answers']
     assessment_id = assessment_info['idAssessment']
     hosts = assessment_info.get('hosts', '')
+
+    if question_filter:
+        # Filter to specific question code (e.g., EST2, ENT2A)
+        answers = [a for a in answers if a['code'].upper() == question_filter.upper()]
+        print(f"🔍 Filtering to question: {question_filter.upper()}")
+        if not answers:
+            print(f"⚠️  No matching regular question found for {question_filter}")
 
     if limit_questions:
         answers = answers[:limit_questions]
@@ -689,6 +697,13 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                 print(f"\n⚠️  Error getting pathway questions: {e}")
                 return
 
+            # Filter pathway questions if question_filter is set
+            if question_filter:
+                pathway_questions = [pq for pq in pathway_questions
+                                    if pq['code'].upper() == question_filter.upper()]
+                if not pathway_questions:
+                    print(f"⚠️  No matching pathway question found for {question_filter}")
+
             total = len(pathways) * len(pathway_questions)
             count = 0
 
@@ -738,7 +753,8 @@ async def main(source_db: str = DEFAULT_DB_PATH,
                exclude_domains: List[str] = None,
                process_pathways: bool = True,
                skip_existing: bool = None,
-               eppo_codes: List[str] = None):
+               eppo_codes: List[str] = None,
+               question_filter: str = None):
     """Main workflow."""
 
     # Use configuration value if not explicitly set via command line
@@ -751,6 +767,8 @@ async def main(source_db: str = DEFAULT_DB_PATH,
 
     print(f"\n📂 Source Database: {source_db}")
     print(f"📂 Skip existing justifications: {skip_existing}")
+    if question_filter:
+        print(f"🔍 Question filter: {question_filter.upper()} only")
 
     if exclude_domains is None:
         exclude_domains = EXCLUDED_DOMAINS
@@ -764,8 +782,8 @@ async def main(source_db: str = DEFAULT_DB_PATH,
     print(f"\n✅ Working with: {working_db}")
     print(f"✅ Complete structure preserved")
 
-    # Confirm
-    if limit_questions is None or limit_questions > 5:
+    # Confirm (skip if filtering to single question or limited questions)
+    if not question_filter and (limit_questions is None or limit_questions > 5):
         response = input("\nThis will make many API calls. Continue? (yes/no): ")
         if response.lower() not in ['yes', 'y']:
             print("Cancelled.")
@@ -816,7 +834,8 @@ async def main(source_db: str = DEFAULT_DB_PATH,
             exclude_domains=exclude_domains,
             limit_questions=limit_questions,
             process_pathways=process_pathways,
-            skip_existing=skip_existing
+            skip_existing=skip_existing,
+            question_filter=question_filter
         )
 
     print("\n" + "=" * 80)
@@ -842,6 +861,8 @@ if __name__ == "__main__":
     parser.add_argument('--limit-questions', type=int, default=None)
     parser.add_argument('--no-pathways', action='store_true',
                        help='Skip pathway questions')
+    parser.add_argument('--question', type=str, default=None,
+                       help='Process only specific question code (e.g., --question EST2)')
     parser.add_argument('--eppo-codes', type=str, nargs='+', default=None,
                        help='Filter by EPPO codes (e.g., --eppo-codes XYLEFA ANOLGL)')
     parser.add_argument('--overwrite', action='store_true',
@@ -871,5 +892,6 @@ if __name__ == "__main__":
         exclude_domains=exclude_domains,
         process_pathways=not args.no_pathways,
         skip_existing=skip_existing,
-        eppo_codes=args.eppo_codes
+        eppo_codes=args.eppo_codes,
+        question_filter=args.question
     ))
