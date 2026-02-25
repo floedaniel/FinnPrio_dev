@@ -267,22 +267,22 @@ Match numeric values in the justification to thresholds in the options.
 Return ONLY: {{"min": "a", "likely": "b", "max": "c"}}"""
 
     else:  # boolean type (IMP2, IMP4)
-        # Get sub-questions if available
-        sub_questions = q.get('sub_questions', [])
-        sub_q_text = ""
-        if sub_questions:
-            sub_q_text = "\nSUB-QUESTIONS:\n"
-            for sq in sub_questions:
-                sub_q_text += f"- {sq['code']}: {sq['text']}\n"
-                if sq.get('description'):
-                    sub_q_text += f"  {sq['description']}\n"
-
         option_code = options[0]['opt'] if options else 'a'
+
+        # Check if this is a specific sub-question (e.g., IMP4.3)
+        current_subq = q.get('current_subquestion')
+        if current_subq:
+            # Asking about a specific sub-question
+            question_text = f"{current_subq['code']}: {current_subq['text']}"
+            if current_subq.get('description'):
+                question_text += f"\n{current_subq['description']}"
+        else:
+            # Asking about the main question (shouldn't happen for IMP2/IMP4)
+            question_text = f"{q['code']}: {q['text']}"
 
         prompt = f"""Determine YES/NO for this impact question.
 
-QUESTION ({q['code']}): {q['text']}
-{sub_q_text}
+QUESTION: {question_text}
 {guidance_text}
 JUSTIFICATION TO ANALYZE:
 {justification}
