@@ -20,6 +20,9 @@ from datetime import datetime
 from typing import Dict, List, Tuple
 import re
 
+# Import instructions loader (auto-generates JSON from Rmd if needed)
+from instructions_loader import build_justification_prompt
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -28,19 +31,21 @@ import re
 #  THIS SCRIPT CREATES A NEW COPY OF YOUR DATABASE EACH TIME IT RUNS!
 #  Using original database again will lose all AI work!
 
-
 # Skip Existing Justifications
 #  KEEP THIS AS True - It will only add justifications for NEW pathway questions
 SKIP_EXISTING_JUSTIFICATION = False # True
 
-
 # DATABASE PATH - UPDATE THIS IF YOU ADDED PATHWAYS
 
-#  CURRENT SETTING: Using AI-enhanced database (with existing justifications)
-DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\VKM Data\26.08.2024_lopende_oppdrag_plantehelse\FinnPrio databaser\Selamavit\selam_2026.db"
+# CURRENT SETTING: Using AI-enhanced database (with existing justifications)
+DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel.db"
 
 # Output directory (new copy will be created here)
-DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\VKM Data\26.08.2024_lopende_oppdrag_plantehelse\FinnPrio databaser\Selamavit"
+DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026"
+
+# Filter by EPPO codes (empty list = process all species)
+# Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
+EPPOCODES_TO_POPULATE = ["ANOLHO"]
 
 # =============================================================================
 # API Keys - Read from files
@@ -158,11 +163,24 @@ def copy_database(source_path: str, output_dir: str) -> str:
     # Create timestamp in DD_MM_YYYY format
     timestamp = datetime.now().strftime("%d_%m_%Y")
 
-    # New name: original_name_ai_enhanced_DD_MM_YYYY.db
-    output_name = f"{original_name}_ai_enhanced_{timestamp}.db"
+    # Check if source already has _ai_enhanced_ pattern - extract base name
+    if "_ai_enhanced_" in original_name:
+        base_name = original_name.split("_ai_enhanced_")[0]
+    else:
+        base_name = original_name
+
+    # New name: base_name_ai_enhanced_DD_MM_YYYY.db
+    output_name = f"{base_name}_ai_enhanced_{timestamp}.db"
     output_path = Path(output_dir) / output_name
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # Check if source and destination are the same file (re-run on same day)
+    if source_file.resolve() == output_path.resolve():
+        print(f"\n📋 Using existing database (same-day re-run)...")
+        print(f"   Path: {source_path}")
+        print(f"✅ Working on existing file ({output_path.stat().st_size / 1024:.1f} KB)")
+        return str(output_path)
 
     print(f"\n📋 Copying database...")
     print(f"   From: {source_path}")
@@ -177,27 +195,58 @@ def copy_database(source_path: str, output_dir: str) -> str:
 
     return str(output_path)
 
-def get_all_assessment_ids(db_path: str) -> List[int]:
-    """Get all assessment IDs."""
+def get_all_assessment_ids(db_path: str, eppo_codes: List[str] = None) -> List[int]:
+    """Get all assessment IDs, optionally filtered by EPPO codes."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT idAssessment
-        FROM assessments
-        ORDER BY idAssessment
-    """)
+
+    if eppo_codes:
+        # Filter by EPPO codes (case-insensitive)
+        placeholders = ','.join(['?' for _ in eppo_codes])
+        cursor.execute(f"""
+            SELECT a.idAssessment
+            FROM assessments a
+            JOIN pests p ON a.idPest = p.idPest
+            WHERE UPPER(p.eppoCode) IN ({placeholders})
+            ORDER BY a.idAssessment
+        """, [code.upper() for code in eppo_codes])
+    else:
+        cursor.execute("""
+            SELECT idAssessment
+            FROM assessments
+            ORDER BY idAssessment
+        """)
+
     ids = [row[0] for row in cursor.fetchall()]
     conn.close()
     return ids
+
+
+def get_eppo_codes_for_assessments(db_path: str, assessment_ids: List[int]) -> List[str]:
+    """Get EPPO codes for a list of assessment IDs."""
+    if not assessment_ids:
+        return []
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    placeholders = ','.join(['?' for _ in assessment_ids])
+    cursor.execute(f"""
+        SELECT DISTINCT p.eppoCode
+        FROM assessments a
+        JOIN pests p ON a.idPest = p.idPest
+        WHERE a.idAssessment IN ({placeholders})
+    """, assessment_ids)
+    codes = [row[0] for row in cursor.fetchall() if row[0]]
+    conn.close()
+    return codes
 
 def get_assessment_info(db_path: str, assessment_id: int) -> Dict:
     """Get assessment details including pest and regular questions."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Get assessment
+    # Get assessment with hosts (hosts is in assessments table)
     cursor.execute("""
-        SELECT a.idAssessment, a.idPest, p.scientificName, p.eppoCode
+        SELECT a.idAssessment, a.idPest, p.scientificName, p.eppoCode, a.hosts
         FROM assessments a
         JOIN pests p ON a.idPest = p.idPest
         WHERE a.idAssessment = ?
@@ -209,7 +258,7 @@ def get_assessment_info(db_path: str, assessment_id: int) -> Dict:
         conn.close()
         return None
 
-    assessment_id, pest_id, pest_name, eppo_code = result
+    assessment_id, pest_id, pest_name, eppo_code, hosts = result
 
     # Get regular questions
     cursor.execute("""
@@ -240,6 +289,7 @@ def get_assessment_info(db_path: str, assessment_id: int) -> Dict:
         'idPest': pest_id,
         'scientificName': pest_name,
         'eppoCode': eppo_code,
+        'hosts': hosts or "",
         'answers': answers
     }
 
@@ -379,8 +429,29 @@ def update_pathway_justification(db_path: str, id_entry_pathway: int,
 # =============================================================================
 
 def get_question_specific_instructions(question_code: str, pest_name: str,
-                                       pathway_name: str = None) -> str:
-    """Get specific research instructions for each question."""
+                                       pathway_name: str = None, hosts: str = None) -> str:
+    """
+    Get specific research instructions for each question.
+
+    Uses Rmd-derived JSON instructions if available, falls back to hardcoded.
+    """
+
+    # Try to use the instructions loader (Rmd-derived JSON) first
+    if INSTRUCTIONS_LOADER_AVAILABLE:
+        try:
+            prompt = _build_prompt_from_json(question_code, pest_name, pathway_name, hosts)
+            if prompt and len(prompt) > 50:  # Sanity check
+                return prompt
+        except Exception as e:
+            print(f"[Warning] Failed to load instructions from JSON for {question_code}: {e}")
+
+    # Fallback to hardcoded instructions
+    return _get_hardcoded_instructions(question_code, pest_name, pathway_name)
+
+
+def _get_hardcoded_instructions(question_code: str, pest_name: str,
+                                pathway_name: str = None) -> str:
+    """Fallback hardcoded instructions (original implementation)."""
 
     # Pathway questions get special treatment
     if pathway_name:
@@ -522,16 +593,67 @@ DO NOT include eradication or detection during imports.""",
 # =============================================================================
 
 def create_research_query(pest_name: str, question_code: str, question_text: str,
-                          question_info: str = "", pathway_name: str = None) -> str:
-    """Create targeted research query."""
+                          question_info: str = "", pathway_name: str = None,
+                          hosts: str = None) -> str:
+    """Create targeted research query.
 
-    # Get specific instructions
-    specific = get_question_specific_instructions(question_code, pest_name, pathway_name)
+    Note: question_info from database is IGNORED when Rmd instructions are available,
+    as the Rmd provides more accurate and up-to-date guidance.
+    """
+
+    # Get specific instructions from Rmd (preferred) or hardcoded fallback
+    specific = get_question_specific_instructions(question_code, pest_name, pathway_name, hosts)
+
+    # Check if we got Rmd instructions (they include "QUESTION" header)
+    using_rmd_instructions = specific and "QUESTION" in specific and INSTRUCTIONS_LOADER_AVAILABLE
 
     # Build query
     pathway_text = f' via the pathway "{pathway_name}"' if pathway_name else ""
 
-    query = f"""
+    # If using Rmd instructions, the 'specific' prompt already contains everything needed
+    if using_rmd_instructions:
+        query = f"""
+Research the following pest for a risk assessment:
+
+PEST: {pest_name}{pathway_text}
+
+{specific}
+
+CRITICAL: Answer ONLY this specific question. Do NOT include information about other topics.
+
+RESEARCH REQUIREMENTS:
+- Base on peer-reviewed literature, official risk assessments (EPPO, EFSA, CABI)
+- Provide specific evidence with citations
+- Consider Norwegian/Nordic context (temperate to boreal climate, cold winters)
+- Acknowledge uncertainty when evidence is limited
+- Keep focused and concise (300-400 words)
+
+INSUFFICIENT INFORMATION:
+- If the provided context contains insufficient information to answer the question, explicitly state: "The provided context contains insufficient information to answer the question."
+- After stating this, you may provide relevant context that IS available, but clearly note the information gaps
+
+ASSUMPTIONS:
+- If making any assumptions, clearly indicate them with phrases like:
+  * "Assuming that..."
+  * "Based on the assumption that..."
+  * "It is assumed that..."
+- Clearly distinguish between evidence-based statements and assumptions
+
+OUTPUT FORMAT:
+- Write in PLAIN TEXT only - NO markdown (#, ##, **, *, -)
+- DO NOT use tables - they are unreadable in plain text
+- DO NOT include "Introduction" sections
+- Answer the question DIRECTLY
+- Use paragraph format with proper punctuation
+- Citations in parentheses: (Author, Year)
+- Write as continuous text, not lists
+- If multiple items, write in sentence form
+
+Provide a clear, evidence-based justification.
+"""
+    else:
+        # Fallback: use old format with database question_info
+        query = f"""
 Research the following question about {pest_name}{pathway_text}:
 
 QUESTION ({question_code}): {question_text}
@@ -577,7 +699,8 @@ Provide a clear, evidence-based justification.
 
 async def research_justification(pest_name: str, question_code: str, question_text: str,
                                  question_info: str = "", pathway_name: str = None,
-                                 exclude_domains: List[str] = None) -> str:
+                                 exclude_domains: List[str] = None,
+                                 hosts: str = None) -> str:
     """Research a single justification using GPT Researcher."""
 
     pathway_text = f" (Pathway: {pathway_name})" if pathway_name else ""
@@ -588,8 +711,11 @@ async def research_justification(pest_name: str, question_code: str, question_te
     if exclude_domains:
         print(f"⛔ Excluding: {', '.join(exclude_domains)}")
 
+    if hosts:
+        print(f"🌱 Hosts: {hosts[:100]}{'...' if len(hosts) > 100 else ''}")
+
     query = create_research_query(pest_name, question_code, question_text,
-                                  question_info, pathway_name)
+                                  question_info, pathway_name, hosts)
 
     # Add domain exclusion
     if exclude_domains:
@@ -643,6 +769,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
     eppo_code = assessment_info['eppoCode']
     answers = assessment_info['answers']
     assessment_id = assessment_info['idAssessment']
+    hosts = assessment_info.get('hosts', '')
 
     if limit_questions:
         answers = answers[:limit_questions]
@@ -650,6 +777,8 @@ async def process_assessment(db_path: str, assessment_id: int = None,
 
     print(f"\n📊 Assessment: {pest_name} ({eppo_code})")
     print(f"📊 Regular questions: {len(answers)}")
+    if hosts:
+        print(f"🌱 Hosts: {hosts[:100]}{'...' if len(hosts) > 100 else ''}")
 
     # Process regular questions
     print("\n" + "=" * 80)
@@ -672,7 +801,8 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                 question_code=answer['code'],
                 question_text=answer['text'],
                 question_info=answer['info'],
-                exclude_domains=exclude_domains or []
+                exclude_domains=exclude_domains or [],
+                hosts=hosts
             )
 
             combined = f"{existing}\n\n{ai_text}" if existing else ai_text
@@ -728,7 +858,8 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                             question_text=pq['text'],
                             question_info=pq['info'],
                             pathway_name=pathway_name,
-                            exclude_domains=exclude_domains or []
+                            exclude_domains=exclude_domains or [],
+                            hosts=hosts
                         )
 
                         combined = f"{existing}\n\n{ai_text}" if existing else ai_text
@@ -748,7 +879,8 @@ async def main(source_db: str = DEFAULT_DB_PATH,
                limit_questions: int = None,
                exclude_domains: List[str] = None,
                process_pathways: bool = True,
-               skip_existing: bool = None):
+               skip_existing: bool = None,
+               eppo_codes: List[str] = None):
     """Main workflow."""
 
     # Use configuration value if not explicitly set via command line
@@ -792,10 +924,23 @@ async def main(source_db: str = DEFAULT_DB_PATH,
     if process_pathways:
         print("ℹ️  Will process pathway questions for each selected pathway")
 
+    # Determine EPPO codes to use (command-line overrides config)
+    effective_eppo_codes = eppo_codes if eppo_codes else (EPPOCODES_TO_POPULATE if EPPOCODES_TO_POPULATE else None)
+
     # Get list of assessments to process
     if assessment_id:
         assessment_ids = [assessment_id]
         print(f"\nℹ️  Processing single assessment: {assessment_id}")
+    elif effective_eppo_codes:
+        assessment_ids = get_all_assessment_ids(working_db, effective_eppo_codes)
+        print(f"\nℹ️  Filtering by EPPO codes: {effective_eppo_codes}")
+        print(f"    Found {len(assessment_ids)} matching assessment(s)")
+        # Verify all requested codes were found
+        if assessment_ids:
+            found_codes = get_eppo_codes_for_assessments(working_db, assessment_ids)
+            missing = set(c.upper() for c in effective_eppo_codes) - set(c.upper() for c in found_codes)
+            if missing:
+                print(f"⚠️  Warning: No assessments found for EPPO codes: {missing}")
     else:
         assessment_ids = get_all_assessment_ids(working_db)
         print(f"\nℹ️  Processing all assessments: {len(assessment_ids)} total")
@@ -839,6 +984,8 @@ if __name__ == "__main__":
     parser.add_argument('--limit-questions', type=int, default=None)
     parser.add_argument('--no-pathways', action='store_true',
                        help='Skip pathway questions')
+    parser.add_argument('--eppo-codes', type=str, nargs='+', default=None,
+                       help='Filter by EPPO codes (e.g., --eppo-codes XYLEFA ANOLGL)')
     parser.add_argument('--overwrite', action='store_true',
                        help=f'Overwrite existing justifications (default behavior: SKIP_EXISTING_JUSTIFICATION={SKIP_EXISTING_JUSTIFICATION})')
     parser.add_argument('--exclude-domains', type=str, nargs='+', default=None)
@@ -865,5 +1012,6 @@ if __name__ == "__main__":
         limit_questions=args.limit_questions,
         exclude_domains=exclude_domains,
         process_pathways=not args.no_pathways,
-        skip_existing=skip_existing
+        skip_existing=skip_existing,
+        eppo_codes=args.eppo_codes
     ))
