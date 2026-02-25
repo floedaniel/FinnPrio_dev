@@ -247,28 +247,22 @@ def build_value_selection_prompt(
             guidance_text += f"- {char}\n"
 
     if question_type == "minmax":
-        prompt = f"""TASK: Compare the JUSTIFICATION against the ANSWER OPTIONS and select min/likely/max.
+        prompt = f"""Select min/likely/max values for this pest risk assessment question.
 
-===== QUESTION =====
-{q['code']}: {q['text']}
+QUESTION ({q['code']}): {q['text']}
 
-===== ANSWER OPTIONS (from FinnPRIO instructions) ====={options_text}
+OPTIONS:{options_text}
 {guidance_text}
-===== JUSTIFICATION TO EVALUATE =====
+JUSTIFICATION TO ANALYZE:
 {justification}
 
-===== YOUR TASK =====
-Compare the justification above against each answer option.
+TASK:
+- LIKELY = option that best matches the justification's main conclusion
+- MIN = lowest option that could reasonably apply given any uncertainty
+- MAX = highest option that could reasonably apply given any uncertainty
+- If the justification is definitive (no uncertainty), set min = likely = max
 
-1. Which option does the justification's MAIN CONCLUSION match? -> This is LIKELY
-2. What is the LOWEST option that could apply based on the justification? -> This is MIN
-3. What is the HIGHEST option that could apply based on the justification? -> This is MAX
-
-RULES:
-- The justification may explicitly state an option (e.g., "A. No, it cannot") - use that
-- Match numbers in the justification to thresholds in the options
-- If the justification is certain/definitive, min and max should equal likely
-- If the justification mentions uncertainty or a range, reflect that in min/max
+Match numeric values in the justification to thresholds in the options.
 
 Return ONLY: {{"min": "a", "likely": "b", "max": "c"}}"""
 
