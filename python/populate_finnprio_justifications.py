@@ -450,7 +450,7 @@ def create_research_query(pest_name: str, question_code: str, question_text: str
     specific = get_question_specific_instructions(question_code, pest_name, pathway_name, hosts)
 
     # Check if we got Rmd instructions (they include "QUESTION" header)
-    using_rmd_instructions = specific and "QUESTION" in specific and INSTRUCTIONS_LOADER_AVAILABLE
+    using_rmd_instructions = specific and "QUESTION" in specific
 
     # Build query
     pathway_text = f' via the pathway "{pathway_name}"' if pathway_name else ""
