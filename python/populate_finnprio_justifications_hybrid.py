@@ -918,21 +918,25 @@ async def main(source_db: str = DEFAULT_DB_PATH,
         print(f"\nℹ️  Processing all assessments: {len(assessment_ids)} total")
 
     # Process each assessment
-    for idx, aid in enumerate(assessment_ids, 1):
-        if len(assessment_ids) > 1:
-            print("\n" + "=" * 80)
-            print(f"ASSESSMENT {idx}/{len(assessment_ids)} (ID: {aid})")
-            print("=" * 80)
+    try:
+        for idx, aid in enumerate(assessment_ids, 1):
+            if len(assessment_ids) > 1:
+                print("\n" + "=" * 80)
+                print(f"ASSESSMENT {idx}/{len(assessment_ids)} (ID: {aid})")
+                print("=" * 80)
 
-        await process_assessment(
-            db_path=working_db,
-            assessment_id=aid,
-            exclude_domains=exclude_domains,
-            limit_questions=limit_questions,
-            process_pathways=process_pathways,
-            skip_existing=skip_existing,
-            question_filter=effective_question_filter
-        )
+            await process_assessment(
+                db_path=working_db,
+                assessment_id=aid,
+                exclude_domains=exclude_domains,
+                limit_questions=limit_questions,
+                process_pathways=process_pathways,
+                skip_existing=skip_existing,
+                question_filter=effective_question_filter
+            )
+    finally:
+        # Clean up temp documents folder
+        cleanup_temp_docs()
 
     print("\n" + "=" * 80)
     print("✅ COMPLETED")
