@@ -4,6 +4,312 @@ All notable changes to the Python AI enhancement scripts.
 
 ---
 
+## [2026-02-26] - Hybrid Research Script
+
+### Added
+- `populate_finnprio_justifications_hybrid.py`: New script combining web search with local PDF documents
+  - Uses GPT Researcher's hybrid mode for enhanced research quality
+  - Automatically loads documents from `Species/{EPPO_CODE}/` folder
+  - Recursively finds all .pdf, .txt, .docx, .doc files
+  - Falls back to web-only if no local documents exist for a species
+  - Copies docs to temp `my-docs` folder, cleans up after processing
+
+---
+
+## [2026-02-25] - Rmd Restructuring and Parser v2.0
+
+### Major: Clean Rmd Format with Explicit Thresholds
+
+Complete restructuring of the instructions system for better parsing and clearer AI prompts.
+
+**Rmd File Changes (`Instructions_FinnPRIO_assessments.Rmd`):**
+- New consistent format with `### Options` and `### Guidance` sections
+- Options now include descriptions inline (e.g., `**a. Small** (<2 million km²)`)
+- Explicit km² thresholds for geographic questions:
+  - **ENT1**: Small (<2M km²), Medium (2-20M km²), Large (>20M km²)
+  - **ENT3**: Small (<1M kg/pc), Medium (1-10M kg/pc), Large (>10M kg/pc)
+  - **EST2**: Very small (<100 ha), Small (100-1000 ha), Medium (1000-10000 ha), Large (>10000 ha)
+- Removed old "red circle" references
+- All 18 questions converted to new format
+
+**Parser Changes (`parse_rmd_instructions.py`):**
+- Version 2.0 for new clean format
+- Parses `### Options` section with descriptions
+- Parses `### Guidance` section as bullet points
+- Filters out `---` separator lines
+- Handles EST4 scoring characteristics
+- Handles IMP2/IMP4 boolean sub-questions
+
+**Loader Changes (`instructions_loader.py`):**
+- Works with new JSON format (`guidance` instead of old `sections`)
+- Builds prompts with option descriptions inline
+- Cleaner prompt output
+
+**Benefits:**
+- AI now sees explicit thresholds (km², ha, kg) in prompts
+- More accurate value selection based on quantitative criteria
+- Easier to maintain - edit Rmd, parser auto-updates JSON
+- Both justification and values scripts use the new instructions
+
+**Testing:**
+```bash
+# Regenerate JSON from new Rmd
+python parse_rmd_instructions.py --force
+
+# Test loader
+python instructions_loader.py
+```
+
+---
+
+## [2026-02-24] - Rmd-to-JSON Instructions System
+
+### New: External Instructions Source
+
+Question-specific instructions now loaded from `Instructions_FinnPRIO_assessments.Rmd` instead of hardcoded Python.
+
+**Benefits:**
+- Edit Rmd file to customize instructions (no code changes needed)
+- Richer prompts with examples, thresholds, and guidance sections
+- Consistent instructions across justification and value scripts
+- Auto-regenerates JSON when Rmd is modified
+
+**New Files:**
+| File | Purpose |
+|------|---------|
+| `parse_rmd_instructions.py` | Parses Rmd to structured JSON |
+| `instructions_loader.py` | Loads JSON, builds prompts |
+| `instructions_cache/` | Cache directory for generated JSON |
+
+**Modified Files:**
+- `populate_finnprio_justifications.py` - Uses `instructions_loader` with fallback
+- `populate_finnprio_values.py` - Enhanced prompts with Rmd examples
+
+**Workflow:**
+```
+Instructions_FinnPRIO_assessments.Rmd
+         ↓ (auto-parse on change)
+finnprio_instructions.json (cache)
+         ↓ (load at runtime)
+populate_*.py scripts
+```
+
+**Testing:**
+```bash
+# Test parser standalone
+python parse_rmd_instructions.py --force
+
+# Test loader
+python instructions_loader.py
+```
+
+---
+
+## [2026-02-24] - Unified EPPO + GPT Researcher Integration
+
+### ✅ New: EPPO MCP Server (`servers/eppo_mcp_server.py`)
+
+Custom MCP server providing access to EPPO Global Database API v2.
+
+**Features:**
+- SQLite caching (7-day TTL) - reduces API calls
+- Rate limiting (60 requests / 10 seconds) - respects EPPO limits
+- Async HTTP client (httpx)
+- MCP protocol compliance
+
+**Available Tools:**
+| Tool | Description |
+|------|-------------|
+| `eppo_get_pest_info` | Comprehensive pest data (distribution, hosts, regulatory) |
+| `eppo_get_distribution` | Geographic distribution by country |
+| `eppo_get_hosts` | Host plants (major/minor classification) |
+| `eppo_get_categorization` | Regulatory status (A1/A2 lists) |
+| `eppo_get_taxonomy` | Taxonomic classification |
+| `eppo_get_vectors` | Vector organisms |
+| `eppo_get_bca` | Biological control agents |
+| `eppo_search` | Search EPPO code by name |
+
+**Requirements:**
+```bash
+pip install mcp httpx aiosqlite
+```
+
+---
+
+### ✅ New: Unified Orchestrator (`populate_finnprio_justifications_unified.py`)
+
+**"One script to bind them all"** - Combines EPPO and GPT Researcher.
+
+**Architecture:**
+```
+Unified Script
+    ├── EPPO MCP Server (authoritative data)
+    │   └── Distribution, Hosts, Categorization, Vectors, BCA
+    └── GPT Researcher MCP (scientific literature)
+        └── Papers, Studies, Outbreak reports
+```
+
+**Workflow per question:**
+1. Query EPPO for structured, authoritative data (cached)
+2. Build context-aware research query using EPPO data
+3. Call GPT Researcher for broader scientific context
+4. Synthesize both into comprehensive justification
+
+**Question → EPPO Data Mapping:**
+| Question | EPPO Data Used |
+|----------|----------------|
+| ENT1 | Distribution, Categorization |
+| EST1-3 | Distribution, Hosts |
+| EST4 | Hosts, Vectors |
+| IMP1-4 | Hosts |
+| MAN1-3 | Distribution, Categorization |
+| MAN4-5 | Biological Control Agents |
+
+**Benefits over separate scripts:**
+- EPPO data as reliable foundation (instant, cached)
+- Smarter research queries (GPT Researcher searches with EPPO context)
+- Reduced costs (EPPO data is free after fetch; reduces research scope)
+- Better citations (EPPO official sources + literature)
+- Graceful fallback (EPPO down → research only)
+
+**Usage:**
+```bash
+python populate_finnprio_justifications_unified.py --eppo-codes XYLEFA
+python populate_finnprio_justifications_unified.py --assessment-id 1
+python populate_finnprio_justifications_unified.py  # All assessments
+```
+
+**Output:** `original_name_unified_DD_MM_YYYY.db`
+
+---
+
+### 📁 New File Structure
+
+```
+python/
+├── servers/
+│   ├── __init__.py
+│   └── eppo_mcp_server.py          # NEW: EPPO API MCP server
+├── cache/
+│   └── eppo_cache.db               # Auto-created: EPPO cache
+├── populate_finnprio_justifications_unified.py  # NEW: Combined script
+├── populate_finnprio_justifications.py
+├── populate_finnprio_justifications_mcp.py
+├── populate_finnprio_justifications_anthropic.py
+├── populate_finnprio_values.py
+└── ...
+```
+
+---
+
+## [2026-02-16] - Performance Fixes for Local Values Script
+
+### 🔧 Fixed: `populate_finnprio_values_local.py` Extreme Slowness
+
+Fixed critical performance issues causing 10+ minutes per question:
+
+**Root Causes:**
+1. Model was `phi4-reasoning:14b` (11GB) - too slow for laptops
+2. No `max_tokens` limit - model could generate excessive responses
+3. No justification truncation - long texts slowed inference
+4. Verbose prompts - unnecessary tokens in input
+
+**Fixes Applied:**
+- Changed default model to `mistral:7b-instruct` (4.4GB, much faster)
+- Added `MAX_TOKENS = 150` limit (only need short JSON response)
+- Added `MAX_JUSTIFICATION_LENGTH = 2000` truncation
+- Simplified prompts (reduced ~300 tokens to ~80 tokens)
+
+**Expected Performance:**
+- Before: 10+ minutes per question
+- After: 5-15 seconds per question (depending on model/hardware)
+
+---
+
+## [2026-02-16] - EPPO Code Filtering, Database Fixes, and FREE Local Scripts
+
+### ✅ New: FREE Local LLM Scripts (Zero Cost!)
+
+Created two new scripts that use **Ollama (local LLM) + DuckDuckGo (free search)** for 100% free operation:
+
+**`populate_finnprio_justifications_local.py`**
+- Uses GPT Researcher with Ollama backend
+- DuckDuckGo for web search (no API key needed)
+- Recommended models: phi3:3.8b (fast), llama3.2 (balanced), qwen2:7b (quality)
+- Reduced research parameters for laptop performance
+- Output files named `*_local_*.db`
+
+**`populate_finnprio_values_local.py`**
+- Direct Ollama API (OpenAI-compatible endpoint)
+- No web search needed (analyzes existing justifications)
+- Fast inference with small models
+- Same features as paid version
+
+**Requirements:**
+```bash
+# Install Ollama models
+ollama pull phi3:3.8b-mini-128k-instruct
+ollama pull llama3.2
+ollama pull nomic-embed-text
+
+# Start Ollama server
+ollama serve
+```
+
+**Usage:**
+```bash
+python populate_finnprio_justifications_local.py --eppo-codes XYLEFA
+python populate_finnprio_values_local.py --eppo-codes XYLEFA
+```
+
+### ✅ New: EPPO Code Filtering
+
+Added ability to filter species by EPPO codes in all 4 Python population scripts. Previously, scripts processed ALL assessments in the database.
+
+**Files Modified:**
+- `populate_finnprio_justifications.py`
+- `populate_finnprio_justifications_mcp.py`
+- `populate_finnprio_justifications_anthropic.py`
+- `populate_finnprio_values.py`
+
+**New Configuration Variable:**
+```python
+# Filter by EPPO codes (empty list = process all species)
+EPPOCODES_TO_POPULATE = []  # e.g., ["XYLEFA", "ANOLGL", "DROSSU"]
+```
+
+**New Command-Line Argument:**
+```bash
+python populate_finnprio_justifications.py --eppo-codes XYLEFA ANOLGL DROSSU
+```
+
+**Features:**
+- Case-insensitive matching (uses `UPPER()` in SQL)
+- Command-line `--eppo-codes` overrides config `EPPOCODES_TO_POPULATE`
+- Warns about missing EPPO codes not found in the database
+- Empty list = process all species (default behavior)
+
+### ✅ Fixed: Database Naming Accumulation
+
+**Issue:** Running the script multiple times would append `_ai_enhanced_` repeatedly, creating very long filenames like `db_ai_enhanced_15_02_2026_ai_enhanced_16_02_2026.db`
+
+**Solution:** Extract base name before the enhancement suffix when source already contains it:
+- `selam_2026.db` → `selam_2026_ai_enhanced_16_02_2026.db`
+- `selam_2026_ai_enhanced_15_02_2026.db` → `selam_2026_ai_enhanced_16_02_2026.db` (replaces, not appends)
+
+### ✅ Fixed: Same-Day Re-run Error
+
+**Issue:** Running the script on the same database on the same day caused `SameFileError` because source and destination paths were identical.
+
+**Solution:** Detect when source and destination are the same file and work directly on the existing file:
+```
+📋 Using existing database (same-day re-run)...
+   Path: C:\...\daniel_ai_enhanced_16_02_2026.db
+✅ Working on existing file (XXX KB)
+```
+
+---
+
 ## [2026-02-10] - Major Cleanup, MCP Version, and Anthropic Version
 
 ### ✅ New: Anthropic Version (`populate_finnprio_justifications_anthropic.py`)

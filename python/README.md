@@ -4,26 +4,215 @@ Python scripts for automatically generating justifications and populating min/li
 
 ## 📁 Scripts
 
+### Unified Script (Recommended)
+| Script | Purpose | Cost |
+|--------|---------|------|
+| `populate_finnprio_justifications_unified.py` | **EPPO + GPT Researcher combined** | ~$0.10-0.50/question |
+
+The unified script combines two complementary data sources:
+- **EPPO MCP Server** - Authoritative structured data (distribution, hosts, regulatory status)
+- **GPT Researcher MCP** - Scientific literature and web research
+
+### Cloud/Paid Scripts
+| Script | Purpose | Cost |
+|--------|---------|------|
+| `populate_finnprio_justifications.py` | Generate justifications using GPT Researcher | ~$0.10-0.50/question |
+| `populate_finnprio_justifications_mcp.py` | MCP server version (caching) | ~$0.10-0.50/question |
+| `populate_finnprio_justifications_anthropic.py` | Generate justifications using Claude | ~$0.10-0.50/question |
+| `populate_finnprio_justifications_hybrid.py` | Hybrid: web research + local PDF documents from Species/{EPPO_CODE}/ | ~$0.10-0.50/question |
+| `populate_finnprio_values.py` | Determine min/likely/max values | ~$0.01/question |
+
+### MCP Servers
+| Server | Purpose |
+|--------|---------|
+| `servers/eppo_mcp_server.py` | EPPO Global Database API with caching and rate limiting |
+
+### Local/FREE Scripts (Ollama)
+| Script | Purpose | Cost |
+|--------|---------|------|
+| `populate_finnprio_justifications_local.py` | Justifications with Ollama + DuckDuckGo | **$0.00** |
+| `populate_finnprio_values_local.py` | Values with Ollama | **$0.00** |
+
+### Utilities
 | Script | Purpose |
 |--------|---------|
-| `populate_finnprio_justifications.py` | Generate justifications using GPT Researcher |
-| `populate_finnprio_justifications_mcp.py` | MCP server version (caching, persistent connection) |
-| `populate_finnprio_justifications_anthropic.py` | Generate justifications using Claude (Anthropic) |
-| `populate_finnprio_values.py` | Determine min/likely/max values from justifications |
-| `view_justifications.py` | Utility to view generated justifications |
+| `view_justifications.py` | View generated justifications |
+
+### Instructions System (v2.0)
+| File | Purpose |
+|------|---------|
+| `parse_rmd_instructions.py` | Parses Rmd instructions to JSON (v2.0 format) |
+| `instructions_loader.py` | Loads JSON, builds prompts with options and guidance |
+| `instructions_cache/` | Cache directory for generated JSON |
+
+---
+
+## 📋 Instructions System (v2.0)
+
+Question-specific instructions are loaded from an external Rmd file with a clean, consistent format.
+
+**Source File:** `../information/Instructions_FinnPRIO_assessments.Rmd`
+
+**Rmd Format:**
+```markdown
+## ENT1. How wide is the current global geographical distribution?
+
+### Options
+
+**a. Small** (<2 million km²)
+The distribution is smaller than approximately 2 million km².
+
+**b. Medium** (2-20 million km²)
+The distribution is approximately 2-20 million km².
+
+### Guidance
+
+- Estimate the total area of the pest's known global distribution
+- Include both native and introduced ranges
+```
+
+**Key Thresholds (now explicit in prompts):**
+| Question | Thresholds |
+|----------|------------|
+| ENT1 | Small (<2M km²), Medium (2-20M km²), Large (>20M km²) |
+| ENT3 | Small (<1M kg/pc), Medium (1-10M kg/pc), Large (>10M kg/pc) |
+| EST2 | Very small (<100 ha), Small (100-1000 ha), Medium (1000-10000 ha), Large (>10000 ha) |
+
+**How it works:**
+1. Edit the Rmd file to customize instructions
+2. JSON is auto-generated when scripts run (if Rmd is newer)
+3. Scripts use JSON for prompts with explicit thresholds and guidance
+
+**Benefits:**
+- Explicit quantitative thresholds (km², ha, kg) in AI prompts
+- More accurate value selection
+- No code changes needed to modify instructions
+- Consistent across justification and values scripts
+
+**Test the parser:**
+```bash
+python parse_rmd_instructions.py --force
+python instructions_loader.py
+```
 
 ---
 
 ## 🔄 Workflow
 
+### Recommended: Unified Script
+```
+SOURCE DATABASE → Unified Script → VALUES Script → COMPLETE DATABASE
+                  (EPPO + GPTR)    (GPT-4o-mini)   (Ready for app)
+```
+
+1. **Generate Justifications** - Run `populate_finnprio_justifications_unified.py`
+2. **Generate Values** - Run `populate_finnprio_values.py` on the enhanced database
+3. **Use in App** - Load the complete database in FinnPRIO Assessor
+
+### Alternative: GPT Researcher Only
 ```
 SOURCE DATABASE → Justifications Script → VALUES Script → COMPLETE DATABASE
                   (GPT Researcher)       (GPT-4o-mini)   (Ready for app)
 ```
 
-1. **Generate Justifications** - Run `populate_finnprio_justifications.py`
-2. **Generate Values** - Run `populate_finnprio_values.py` on the enhanced database
-3. **Use in App** - Load the complete database in FinnPRIO Assessor
+---
+
+## 🌟 Unified Script (Recommended)
+
+### `populate_finnprio_justifications_unified.py`
+
+**"One script to bind them all"** - Combines EPPO and GPT Researcher for comprehensive justifications.
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────────┐
+│              Unified Orchestrator                       │
+└───────────────────────┬─────────────────────────────────┘
+                        │
+        ┌───────────────┴───────────────┐
+        ▼                               ▼
+┌───────────────────┐         ┌───────────────────────┐
+│   EPPO MCP Server │         │   GPT Researcher MCP  │
+│                   │         │                       │
+│ • Distribution    │         │ • Scientific papers   │
+│ • Hosts           │         │ • Recent outbreaks    │
+│ • Categorization  │         │ • Management studies  │
+│ • Regulatory      │         │ • Climate modeling    │
+│                   │         │                       │
+│ AUTHORITATIVE     │         │ CONTEXTUAL            │
+└───────────────────┘         └───────────────────────┘
+```
+
+**Features:**
+- Parallel MCP server connections
+- EPPO data as reliable foundation (cached 7 days)
+- GPT Researcher for broader scientific context
+- Smart query building with EPPO context
+- Graceful fallback (EPPO down → research only)
+- Question-specific EPPO data mapping
+
+**Question → EPPO Data Mapping:**
+| Question | EPPO Data Used |
+|----------|----------------|
+| ENT1 | Distribution, Categorization |
+| EST1-3 | Distribution, Hosts |
+| EST4 | Hosts, Vectors |
+| IMP1-4 | Hosts |
+| MAN1-3 | Distribution, Categorization |
+| MAN4-5 | Biological Control Agents |
+
+**Usage:**
+```bash
+# Process specific EPPO codes
+python populate_finnprio_justifications_unified.py --eppo-codes XYLEFA ANOLGL
+
+# Process single assessment
+python populate_finnprio_justifications_unified.py --assessment-id 1
+
+# Process all assessments
+python populate_finnprio_justifications_unified.py
+```
+
+**Output:** `original_name_unified_DD_MM_YYYY.db`
+
+---
+
+## 🔧 MCP Servers
+
+### `servers/eppo_mcp_server.py`
+
+MCP server providing access to EPPO Global Database API v2.
+
+**Features:**
+- SQLite caching (7-day TTL)
+- Rate limiting (60 requests / 10 seconds)
+- Async HTTP client
+- MCP protocol compliance
+
+**Available Tools:**
+| Tool | Description |
+|------|-------------|
+| `eppo_get_pest_info` | Comprehensive pest data (distribution, hosts, regulatory) |
+| `eppo_get_distribution` | Geographic distribution by country |
+| `eppo_get_hosts` | Host plants (major/minor classification) |
+| `eppo_get_categorization` | Regulatory status (A1/A2 lists) |
+| `eppo_get_taxonomy` | Taxonomic classification |
+| `eppo_get_vectors` | Vector organisms |
+| `eppo_get_bca` | Biological control agents |
+| `eppo_search` | Search EPPO code by name |
+
+**Standalone Usage:**
+```bash
+# Run as MCP server
+python servers/eppo_mcp_server.py
+```
+
+**Requirements:**
+```bash
+pip install mcp httpx aiosqlite
+```
+
+**API Key:** `C:\Users\dafl\Desktop\API keys\EPPO_beta.txt`
 
 ---
 
@@ -78,6 +267,62 @@ Best of both worlds: GPT Researcher + Claude (Anthropic).
 **API Keys:** Requires `anthropic_key.txt` and `Tavily_key.txt`
 
 **Output:** `original_name_anthropic_DD_MM_YYYY.db`
+
+---
+
+## 🆓 FREE Local Scripts (Ollama)
+
+### `populate_finnprio_justifications_local.py`
+**100% FREE** - Uses Ollama (local LLM) + DuckDuckGo (free search).
+
+**Features:**
+- GPT Researcher with Ollama backend
+- DuckDuckGo for web search (no API key!)
+- Reduced research parameters for laptop performance
+- Same output format as paid version
+
+**Requirements:**
+```bash
+# Install Ollama from https://ollama.com
+ollama pull llama3.2
+ollama pull phi3:3.8b-mini-128k-instruct
+ollama pull nomic-embed-text
+ollama serve
+```
+
+**Configuration:**
+```python
+# Models (choose based on RAM)
+FAST_LLM = "ollama:phi3:3.8b-mini-128k-instruct"  # 8GB RAM
+SMART_LLM = "ollama:llama3.2"                      # 8GB RAM
+# SMART_LLM = "ollama:qwen2:7b"                    # 16GB+ RAM
+```
+
+**Output:** `original_name_local_DD_MM_YYYY.db`
+
+---
+
+### `populate_finnprio_values_local.py`
+**100% FREE** - Uses Ollama for value determination.
+
+**Features:**
+- Direct Ollama API (OpenAI-compatible)
+- No web search needed
+- Fast inference with small models
+- Same features as paid version
+
+**Recommended Models:**
+| Model | RAM | Speed | Quality |
+|-------|-----|-------|---------|
+| `phi3:3.8b-mini-128k-instruct` | 4GB | Fast | Good |
+| `llama3.2` | 4GB | Fast | Good |
+| `qwen2:7b` | 6GB | Medium | Better |
+
+**Usage:**
+```bash
+python populate_finnprio_values_local.py --eppo-codes XYLEFA
+python populate_finnprio_values_local.py --model llama3.2
+```
 
 ---
 
@@ -374,4 +619,4 @@ For issues or questions, refer to:
 
 ---
 
-**Last Updated:** February 3, 2026
+**Last Updated:** February 26, 2026
