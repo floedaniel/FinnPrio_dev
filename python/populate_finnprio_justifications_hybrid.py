@@ -52,6 +52,19 @@ EPPOCODES_TO_POPULATE = ["ANOLHO"]
 QUESTION_FILTER = "EST2"
 
 # =============================================================================
+# HYBRID RESEARCH - LOCAL DOCUMENTS CONFIGURATION
+# =============================================================================
+
+# Base path where species folders with PDFs are stored
+SPECIES_DOCS_BASE_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\VKM Data\26.08.2024_lopende_oppdrag_plantehelse\Species"
+
+# Temp folder name for GPT Researcher local docs (created in script directory)
+TEMP_DOCS_FOLDER = "my-docs"
+
+# File extensions to include in hybrid research
+DOCUMENT_EXTENSIONS = {".pdf", ".txt", ".docx", ".doc"}
+
+# =============================================================================
 # API Keys - Read from files
 OPENAI_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\chatgpt_apikey.txt"
 TAVILY_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\Tavily_key.txt"
