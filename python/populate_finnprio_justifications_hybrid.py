@@ -1,7 +1,10 @@
 """
-FinnPRIO Database Justification Populator 
+FinnPRIO Database Justification Populator (Hybrid Research Version)
 
 Key features:
+- HYBRID RESEARCH: Combines web search with local PDF documents
+- Local docs loaded from Species/{EPPO_CODE}/ folder
+- Falls back to web-only if no local docs found
 - Copies entire database (preserves complete structure)
 - Appends AI justifications to answers table
 - Handles pathway questions for EACH selected pathway
