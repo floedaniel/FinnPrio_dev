@@ -714,6 +714,8 @@ async def process_assessment(db_path: str, assessment_id: int = None,
     answers = assessment_info['answers']
     assessment_id = assessment_info['idAssessment']
     hosts = assessment_info.get('hosts', '')
+    # Set up local documents for hybrid research
+    use_hybrid = copy_species_docs_to_temp(eppo_code)
 
     if question_filter:
         # Filter to specific question code (e.g., EST2, ENT2A)
@@ -755,7 +757,8 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                 question_text=answer['text'],
                 question_info=answer['info'],
                 exclude_domains=exclude_domains or [],
-                hosts=hosts
+                hosts=hosts,
+                use_hybrid=use_hybrid
             )
 
             combined = f"{existing}\n\n{ai_text}" if existing else ai_text
@@ -820,7 +823,8 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                             question_info=pq['info'],
                             pathway_name=pathway_name,
                             exclude_domains=exclude_domains or [],
-                            hosts=hosts
+                            hosts=hosts,
+                            use_hybrid=use_hybrid
                         )
 
                         combined = f"{existing}\n\n{ai_text}" if existing else ai_text
