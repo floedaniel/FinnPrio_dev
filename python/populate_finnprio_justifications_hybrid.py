@@ -638,7 +638,8 @@ Provide a clear, evidence-based justification.
 async def research_justification(pest_name: str, question_code: str, question_text: str,
                                  question_info: str = "", pathway_name: str = None,
                                  exclude_domains: List[str] = None,
-                                 hosts: str = None) -> str:
+                                 hosts: str = None,
+                                 use_hybrid: bool = False) -> str:
     """Research a single justification using GPT Researcher."""
 
     pathway_text = f" (Pathway: {pathway_name})" if pathway_name else ""
@@ -652,6 +653,8 @@ async def research_justification(pest_name: str, question_code: str, question_te
     if hosts:
         print(f"🌱 Hosts: {hosts[:100]}{'...' if len(hosts) > 100 else ''}")
 
+    print(f"🔬 Research mode: {'hybrid (web + local docs)' if use_hybrid else 'web-only'}")
+
     query = create_research_query(pest_name, question_code, question_text,
                                   question_info, pathway_name, hosts)
 
@@ -660,11 +663,13 @@ async def research_justification(pest_name: str, question_code: str, question_te
         domain_filter = f"\n\nIMPORTANT: Do NOT use information from: {', '.join(exclude_domains)}"
         query = query + domain_filter
 
+    report_source = "hybrid" if use_hybrid else "web"
+
     researcher = GPTResearcher(
         query=query,
-        report_type="research_report", # research_report or detailed_report
+        report_type="research_report",
         tone="formal",
-        report_source="web",
+        report_source=report_source,
     )
 
     try:
