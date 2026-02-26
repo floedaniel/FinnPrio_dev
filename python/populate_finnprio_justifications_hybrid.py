@@ -17,7 +17,7 @@ import shutil
 from pathlib import Path
 from gpt_researcher import GPTResearcher
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import re
 
 # Import instructions loader (auto-generates JSON from Rmd if needed)
@@ -164,6 +164,71 @@ def clean_markdown_formatting(text: str) -> str:
     text = text.strip()
 
     return text
+
+# =============================================================================
+# LOCAL DOCUMENT FUNCTIONS
+# =============================================================================
+
+def get_species_docs_path(eppo_code: str) -> Optional[Path]:
+    """Get the species folder path for an EPPO code.
+    Returns None if folder doesn't exist."""
+    path = Path(SPECIES_DOCS_BASE_PATH) / eppo_code.upper()
+    return path if path.exists() else None
+
+
+def copy_species_docs_to_temp(eppo_code: str) -> bool:
+    """Copy all documents from species folder to temp my-docs folder.
+
+    Returns True if docs were copied, False if no docs found (fallback to web-only).
+    """
+    # Get script directory for temp folder location
+    script_dir = Path(__file__).parent
+    temp_path = script_dir / TEMP_DOCS_FOLDER
+
+    # Clear existing temp folder
+    if temp_path.exists():
+        shutil.rmtree(temp_path)
+    temp_path.mkdir(parents=True, exist_ok=True)
+
+    # Find species folder
+    species_path = get_species_docs_path(eppo_code)
+    if not species_path:
+        print(f"  ⚠️  No local documents folder found for {eppo_code}")
+        return False
+
+    # Recursively find all matching documents
+    docs_copied = 0
+    for ext in DOCUMENT_EXTENSIONS:
+        for doc_file in species_path.rglob(f"*{ext}"):
+            if doc_file.is_file():
+                # Copy to flat structure with unique names (avoid collisions)
+                dest_name = f"{docs_copied:04d}_{doc_file.name}"
+                dest_path = temp_path / dest_name
+                try:
+                    shutil.copy2(doc_file, dest_path)
+                    docs_copied += 1
+                except Exception as e:
+                    print(f"  ⚠️  Failed to copy {doc_file.name}: {e}")
+
+    if docs_copied > 0:
+        print(f"  📚 Copied {docs_copied} documents to temp folder")
+        return True
+    else:
+        print(f"  ⚠️  No documents found in {species_path}")
+        return False
+
+
+def cleanup_temp_docs():
+    """Remove temp my-docs folder."""
+    script_dir = Path(__file__).parent
+    temp_path = script_dir / TEMP_DOCS_FOLDER
+    if temp_path.exists():
+        try:
+            shutil.rmtree(temp_path)
+            print("🧹 Cleaned up temp documents folder")
+        except Exception as e:
+            print(f"⚠️  Failed to cleanup temp folder: {e}")
+
 
 # =============================================================================
 # DATABASE FUNCTIONS - GENERAL
