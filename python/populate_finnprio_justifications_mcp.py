@@ -39,11 +39,15 @@ from mcp.client.stdio import stdio_client
 SKIP_EXISTING_JUSTIFICATION = True
 
 # Database paths
-#  CURRENT SETTING: Using AI-enhanced database (with existing justifications)
-DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\VKM Data\26.08.2024_lopende_oppdrag_plantehelse\FinnPrio databaser\Selamavit\selam_2026.db"
+# CURRENT SETTING: Using AI-enhanced database (with existing justifications)
+DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel.db"
 
 # Output directory (new copy will be created here)
-DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\VKM Data\26.08.2024_lopende_oppdrag_plantehelse\FinnPrio databaser\Selamavit"
+DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026"
+
+# Filter by EPPO codes (empty list = process all species)
+# Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
+EPPOCODES_TO_POPULATE = ["ANOLHO"]
 
 # GPT Researcher MCP Server Path
 # Download from: https://github.com/assafelovic/gptr-mcp
@@ -233,10 +237,26 @@ def copy_database(source_path: str, output_dir: str) -> str:
     source_file = Path(source_path)
     original_name = source_file.stem
     timestamp = datetime.now().strftime("%d_%m_%Y")
-    output_name = f"{original_name}_ai_enhanced_mcp_{timestamp}.db"
+
+    # Check if source already has _ai_enhanced_ pattern - extract base name
+    if "_ai_enhanced_mcp_" in original_name:
+        base_name = original_name.split("_ai_enhanced_mcp_")[0]
+    elif "_ai_enhanced_" in original_name:
+        base_name = original_name.split("_ai_enhanced_")[0]
+    else:
+        base_name = original_name
+
+    output_name = f"{base_name}_ai_enhanced_mcp_{timestamp}.db"
     output_path = Path(output_dir) / output_name
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # Check if source and destination are the same file (re-run on same day)
+    if source_file.resolve() == output_path.resolve():
+        print(f"\n📋 Using existing database (same-day re-run)...")
+        print(f"   Path: {source_path}")
+        print(f"✅ Working on existing file ({output_path.stat().st_size / 1024:.1f} KB)")
+        return str(output_path)
 
     print(f"\n📋 Copying database...")
     print(f"   From: {source_path}")
@@ -251,18 +271,49 @@ def copy_database(source_path: str, output_dir: str) -> str:
 
     return str(output_path)
 
-def get_all_assessment_ids(db_path: str) -> List[int]:
-    """Get all assessment IDs."""
+def get_all_assessment_ids(db_path: str, eppo_codes: List[str] = None) -> List[int]:
+    """Get all assessment IDs, optionally filtered by EPPO codes."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT idAssessment
-        FROM assessments
-        ORDER BY idAssessment
-    """)
+
+    if eppo_codes:
+        # Filter by EPPO codes (case-insensitive)
+        placeholders = ','.join(['?' for _ in eppo_codes])
+        cursor.execute(f"""
+            SELECT a.idAssessment
+            FROM assessments a
+            JOIN pests p ON a.idPest = p.idPest
+            WHERE UPPER(p.eppoCode) IN ({placeholders})
+            ORDER BY a.idAssessment
+        """, [code.upper() for code in eppo_codes])
+    else:
+        cursor.execute("""
+            SELECT idAssessment
+            FROM assessments
+            ORDER BY idAssessment
+        """)
+
     ids = [row[0] for row in cursor.fetchall()]
     conn.close()
     return ids
+
+
+def get_eppo_codes_for_assessments(db_path: str, assessment_ids: List[int]) -> List[str]:
+    """Get EPPO codes for a list of assessment IDs."""
+    if not assessment_ids:
+        return []
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    placeholders = ','.join(['?' for _ in assessment_ids])
+    cursor.execute(f"""
+        SELECT DISTINCT p.eppoCode
+        FROM assessments a
+        JOIN pests p ON a.idPest = p.idPest
+        WHERE a.idAssessment IN ({placeholders})
+    """, assessment_ids)
+    codes = [row[0] for row in cursor.fetchall() if row[0]]
+    conn.close()
+    return codes
 
 def get_assessment_info(db_path: str, assessment_id: int) -> Dict:
     """Get assessment details including pest and regular questions."""
@@ -594,7 +645,8 @@ async def main(source_db: str = DEFAULT_DB_PATH,
               no_pathways: bool = False,
               overwrite: bool = False,
               exclude_domains: List[str] = None,
-              no_default_exclusions: bool = False):
+              no_default_exclusions: bool = False,
+              eppo_codes: List[str] = None):
     """Main execution function."""
 
     print("\n" + "=" * 80)
@@ -623,10 +675,23 @@ async def main(source_db: str = DEFAULT_DB_PATH,
         return
 
     try:
+        # Determine EPPO codes to use (command-line overrides config)
+        effective_eppo_codes = eppo_codes if eppo_codes else (EPPOCODES_TO_POPULATE if EPPOCODES_TO_POPULATE else None)
+
         # Get assessments to process
         if assessment_id:
             assessment_ids = [assessment_id]
             print(f"\n📋 Processing single assessment: {assessment_id}")
+        elif effective_eppo_codes:
+            assessment_ids = get_all_assessment_ids(output_db, effective_eppo_codes)
+            print(f"\n📋 Filtering by EPPO codes: {effective_eppo_codes}")
+            print(f"    Found {len(assessment_ids)} matching assessment(s)")
+            # Verify all requested codes were found
+            if assessment_ids:
+                found_codes = get_eppo_codes_for_assessments(output_db, assessment_ids)
+                missing = set(c.upper() for c in effective_eppo_codes) - set(c.upper() for c in found_codes)
+                if missing:
+                    print(f"⚠️  Warning: No assessments found for EPPO codes: {missing}")
         else:
             assessment_ids = get_all_assessment_ids(output_db)
             print(f"\n📋 Processing {len(assessment_ids)} assessment(s)")
@@ -669,6 +734,8 @@ if __name__ == "__main__":
     parser.add_argument('--assessment-id', type=int, help='Process single assessment ID')
     parser.add_argument('--limit-questions', type=int, help='Limit number of questions to process')
     parser.add_argument('--no-pathways', action='store_true', help='Skip pathway questions')
+    parser.add_argument('--eppo-codes', type=str, nargs='+', default=None,
+                       help='Filter by EPPO codes (e.g., --eppo-codes XYLEFA ANOLGL)')
     parser.add_argument('--overwrite', action='store_true', help='Overwrite existing justifications')
     parser.add_argument('--exclude-domains', nargs='+', help='Additional domains to exclude')
     parser.add_argument('--no-default-exclusions', action='store_true', help='Do not use default domain exclusions')
@@ -683,5 +750,6 @@ if __name__ == "__main__":
         no_pathways=args.no_pathways,
         overwrite=args.overwrite,
         exclude_domains=args.exclude_domains,
-        no_default_exclusions=args.no_default_exclusions
+        no_default_exclusions=args.no_default_exclusions,
+        eppo_codes=args.eppo_codes
     ))

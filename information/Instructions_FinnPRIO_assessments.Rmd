@@ -1,0 +1,543 @@
+---
+title: "Instructions for the FinnPRIO assessments revised 2025"
+author: "Daniel"
+date: "2026-02-24"
+output: html_document
+---
+
+## Pathways
+
+Of the pathways of entry listed below, choose those that are considered to be possible for the assessed pest to enter into the PRA area. Up to five pathways may be assessed for one pest. All commodities that are similar with respect to the questions in the entry section can be assessed together as one pathway. When the answers to the questions significantly differ between commodities they should be assessed as separate pathways.
+
+### Pathway Types
+
+**Host plant commodities**
+
+- **Seeds** (i.e. true seeds)
+
+- **Plants for planting:** planted plants, potted plants, cuttings, grafts, rootstocks, tubers, bulbs, rhizomes and buds. Soil associated with hosts is included in this pathway.
+
+- **Wood and wood products:** e.g. wood in the rough, sawlogs, sawn wood, wood chips, firewood, wood packaging material, articles of wood, bark.
+
+- **Food and fodder:** plant parts intended for eating or raw materials for the food or fodder industry
+
+- **Other living plant parts:** cut flowers and green cuttings, Christmas trees, decorative branches, cones used for decoration.
+
+**Hitchhiking**
+
+- **Hitchhiking:** other than host plant commodities, transport and passengers, soil in general (i.e. soil not associated with hosts).
+
+**Natural spread**
+
+- **Natural spread**
+
+**Intentional introduction**
+
+- **Intentional introduction:** e.g. biological control agents and pest insects
+
+---
+
+## ENT1. How wide is the current global geographical distribution of the pest?
+
+### Options
+
+**a. Small** (<2 million km²)
+The distribution is smaller than approximately 2 million km² (roughly the size of Saudi Arabia or Mexico).
+
+**b. Medium** (2-20 million km²)
+The distribution is approximately 2-20 million km² (ranging from the size of Saudi Arabia to approximately the size of Russia).
+
+**c. Large** (>20 million km²)
+The distribution exceeds approximately 20 million km² (larger than Russia, or spanning multiple continents).
+
+### Guidance
+
+- Estimate the total area of the pest's known global distribution based on reported presence in countries and other administrative units (e.g. states, provinces where relevant)
+- Use distribution records from authoritative sources such as EPPO Global Database, CABI Crop Protection Compendium, or peer-reviewed literature
+- Include both native and introduced ranges/countries
+- Compare the combined area of affected countries/territories to the size thresholds above
+- When distribution within a country is highly restricted (e.g. a single outbreak site), consider whether the full country area should be counted
+
+---
+
+## ENT2A. Not taking into account current official management measures, can the pest be transported via the considered pathway?
+
+### Options
+
+**a. No it cannot**
+The pest cannot survive transport, treatments prevent movement, the commodity is not traded internationally, or the pest is too far for natural spread.
+
+**b. It can, but it is very unlikely**
+Biological characteristics, spreading history, or treatments make transportation very unlikely. No Europhyt interceptions despite regular imports.
+
+**c. It can, but it is unlikely**
+Biological characteristics, spreading history, or treatments make transportation unlikely. Few interceptions in Europhyt, none recent.
+
+**d. It can, and it is likely**
+Biological characteristics or spreading history make transportation likely. Several (but not annual) Europhyt interceptions.
+
+**e. It can, and it is very likely**
+Biological characteristics or spreading history make transportation very likely. Annual Europhyt interceptions.
+
+### Guidance
+
+Take into account:
+- Abundance of the pest in its current range
+- History of spread as a result of human action
+- Plant protection measures in country of origin
+- Detectability of the pest
+- Treatments related to export and transport
+- Pest's potential to survive without a living host plant
+- Pest's potential to withstand temperature variations, dryness and lack of energy
+- Information about Europhyt interceptions / Traces NT in the EU and Norway
+
+Do NOT take into account:
+- Whether the commodity is traded to the PRA area
+- Whether the pest can transfer to a suitable habitat
+- Whether the pest is able to establish in the PRA area
+- Current geographical distribution (except for natural spread)
+- Measures required in plant health legislation
+
+---
+
+## ENT2B. Taking into account current official management measures, can the pest be transported via the considered pathway?
+
+### Options
+
+**a. No it cannot**
+Import bans or strict requirements make transportation impossible.
+
+**b. It can, but it is very unlikely**
+Strict plant health legislation requirements make the pest's transportation nearly impossible. Import or use for biological control is forbidden.
+
+**c. It can, but it is unlikely**
+Transportation would be likely, but legislation requirements prevent it rather effectively.
+
+**d. It can, and it is likely**
+Transportation would be very likely, but legislation requirements prevent it rather effectively.
+
+**e. It can, and it is very likely**
+Transportation would be very likely, and there are no effective measures in legislation to prevent it.
+
+### Guidance
+
+- Consider all factors from ENT2A
+- Additionally consider measures required in legislation on plant health, plant reproductive material and plant protection products
+- Current distribution of the pest should now be taken into account
+
+---
+
+## ENT3. How large a volume of the considered host plant commodity is traded into the PRA area annually?
+
+### Options
+
+**a. Non-existent**
+Use this option when the pathway is hitchhiking, natural spread or intentional introduction.
+
+**b. Small** (<1 million kg or pc)
+The annual traded volume is less than 1 million kg or pieces.
+
+**c. Medium** (1-10 million kg or pc)
+The annual traded volume is 1-10 million kg or pieces.
+
+**d. Large** (>10 million kg or pc)
+The annual traded volume is more than 10 million kg or pieces.
+
+### Guidance
+
+- Consider total volume traded into the PRA area regardless of place of origin
+- When considering true seeds, assess the amount in pieces
+
+---
+
+## ENT4. Can the pest transfer to a suitable habitat after entering the PRA area via the pathway?
+
+### Options
+
+**a. It cannot**
+Host plants are only houseplants, commodity is immediately processed, or imports only during winter with foodstuffs.
+
+**b. It can, but it is very unlikely**
+Entry with fresh fruits/vegetables and very slow spread or sparse hosts. Entry with Christmas trees and cannot survive long in dead wood.
+
+**c. It can, but it is unlikely**
+Entry with houseplants from where it can spread outdoors. Sparse field crops and cannot actively locate habitats.
+
+**d. It can, and it is likely**
+Entry with wood packaging and widespread hosts with high spread rate. Entry with cut flowers near production areas.
+
+**e. It can, and it is very likely**
+Arrives directly to production sites with plant reproductive material. Entry with wood packaging and very widespread hosts with very high spread.
+
+### Guidance
+
+Take into account:
+- Season when commodity is traded to the PRA area
+- Storage conditions in the PRA area
+- Final destination and intended use of commodity
+- Pest's natural potential to spread
+- Pest's ability to actively locate suitable habitats
+- Distribution of suitable habitats
+
+Do NOT take into account:
+- Whether the pest could be transported via the pathway
+- Whether the pest would be able to establish in the PRA area
+
+---
+
+## EST1. Could the pest reproduce and overwinter in the PRA area taking into account the climate and production conditions?
+
+### Options
+
+**a. No, it could not**
+Distribution restricted to warm-temperate, subtropical or tropical climates with no overlap with Norwegian conditions. Host plants not produced year-round and pest cannot survive without living host.
+
+**b. It could, but it is unlikely**
+Mainly warm-temperate regions with some cool-temperate records. Thermal requirements suggest marginal reproduction, possibly limited to sheltered southeastern lowlands.
+
+**c. It could, and it is likely**
+Established in cool-temperate or nemoral regions of central/northern Europe with conditions overlapping parts of Norway. Host plants produced in greenhouses year-round but pest requires conditions not always present.
+
+**d. It could, and it is very likely**
+Already established in Scandinavia or regions closely matching Norwegian conditions. Host plants produced year-round in greenhouses and pest can complete full lifecycle on hosts.
+
+### Guidance
+
+- Consider both outdoor and greenhouse conditions
+- Norway has: warm humid oceanic coastal climate (Cfb/Cfc), nemoral/temperate southeastern lowlands, hemiboreal transitional zones, and boreal to subarctic climates inland and north
+- Pests restricted to warm-temperate, Mediterranean, subtropical or tropical climates are generally unlikely to establish outdoors
+- If establishment depends on vector species not present, base answer on the organism with less suitable conditions
+
+---
+
+## EST2. In how large an area do the pest's host plants grow or are cultivated in the PRA area?
+
+### Options
+
+**a. Not at all**
+Host plants do not occur naturally or are not cultivated.
+
+**b. Very small** (<100 ha)
+Production area less than 100 ha. Only one or few ornamental species in greenhouses. Only one very rare wild plant.
+
+**c. Small** (100-1,000 ha)
+Production area 100-1,000 ha. Threatens almost all greenhouse crops.
+
+**d. Medium** (1,000-10,000 ha)
+Production area 1,000-10,000 ha. Threatens common wild plants not occurring throughout PRA area.
+
+**e. Large** (>10,000 ha)
+Production area more than 10,000 ha. Threatens common wild plants occurring throughout most of the PRA area.
+
+### Guidance
+
+- Consider all host plants considered threatened in EST1
+- Only count host plants supporting reproduction and establishment
+- Consider only areas where climate is suitable
+
+---
+
+## EST3. How quickly would the pest likely spread in the PRA area?
+
+### Options
+
+**a. Very slowly** (<10 m/year)
+Lives only in soil without human-assisted spread. Disperses less than 10 m annually. Host plants very far apart and no human-assisted spread.
+
+**b. Rather slowly** (10-1,000 m/year)
+Spreads via tools within one farm. Disperses 10-1,000 m annually.
+
+**c. Rather quickly** (1-10 km/year)
+Spreads via large agricultural machinery between farms. Disperses 1-10 km annually.
+
+**d. Quickly** (>10 km/year)
+Spreads with plant reproductive material between farms. Disperses more than 10 km annually by flight or wind.
+
+### Guidance
+
+- Consider rate of natural spread and spread by human assistance
+- Consider spatial distribution of host plants (patch arrangement, size, distances)
+- Consider likelihood of transfer between host species (e.g., greenhouse to field)
+- If spread depends on vector species, base answer on the organism with slower spread
+
+---
+
+## EST4. Does the pest have characteristics that could assist in its establishment or spread in new areas?
+
+### Options
+
+**a. No it does not** (0-1 points)
+The pest has none or one of the listed characteristics.
+
+**b. It has characteristics that could assist to some extent** (2-3 points)
+Two characteristics, or one significant characteristic.
+
+**c. It has characteristics that could assist to a great extent** (4-5 points)
+Three characteristics, or two with at least one significant.
+
+**d. It has characteristics that could assist to a very great extent** (6+ points)
+Four or more characteristics, or two-three with significant ones.
+
+### Guidance
+
+Score the following characteristics (1 point each, or 2 points if significant):
+- Can reproduce asexually
+- Has high reproductive rate or output
+- Can survive without host plants for rather long periods
+- Able to actively locate host plants or mates from long distance
+- Has several host plants from different plant families
+- Observed to rapidly acclimate or adapt to new conditions (new races, pesticide resistance, new hosts, new climatic conditions)
+- Other characteristics that could assist establishment or spread
+
+---
+
+## IMP1. How significant are the direct economic losses that the pest would cause in the PRA area?
+
+### Options
+
+**a.** It would not cause losses in the PRA area
+**b.** < 0.05 million EUR per year
+**c.** 0.05-0.1 million EUR per year
+**d.** 0.1-0.2 million EUR per year
+**e.** 0.2-0.4 million EUR per year
+**f.** 0.4-0.8 million EUR per year
+**g.** 0.8-1.5 million EUR per year
+**h.** 1.5-3 million EUR per year
+**i.** 3-6 million EUR per year
+**j.** 6-12 million EUR per year
+**k.** 12-25 million EUR per year
+**l.** 25-50 million EUR per year
+**m.** > 50 million EUR per year
+
+### Guidance
+
+- Assume pest present in entire area threatened in EST1 and EST2
+- Crop losses = total value of threatened crops x expected loss percentage
+- Control costs = cost per area (EUR/ha) x production area (ha)
+- If spread depends on vector, consider vector's effect on economic losses
+
+Take into account:
+- All crop plants, forestry trees, ornamental plants, and wild plants that can be utilized
+- Crop losses, quality losses, and increase in pest control costs
+- Effect of climate and production conditions on pest's potential to cause losses
+
+Do NOT take into account:
+- Social or environmental impacts
+- Costs of controlling other pests
+- Costs of eradication measures required by plant health legislation
+- Losses caused by vector species on its own
+
+---
+
+## IMP 2.1: Would the pest cause the following indirect economic impacts in the PRA area?
+
+### Options
+**IMP2.1. Would the pest impact foreign trade?**
+
+### Guidance
+
+- This is a boolean question with sub-questions answered yes or no.
+- Consider only host plants threatened in EST1 and EST2. If spread depends on vector, consider vector's effect.
+
+Significant impact means:
+- No effective control measures available and without control would cause substantial losses
+- Control would require implementing measures not currently used in the sector
+
+Insignificant impact means:
+- Measures normally used to control other pests would effectively control this pest
+
+Do NOT take into account:
+- Impacts caused by vector species on its own
+- Size of plant sector relative to other sectors
+
+---
+
+## IMP 2.2: Would the pest cause the following indirect economic impacts in the PRA area?
+
+### Options
+**IMP2.2. Is the pest a vector for other pests?**
+
+### Guidance
+- This is a boolean question with sub-questions answered yes or no.
+
+---
+
+## IMP 2.3: Would the pest cause the following indirect economic impacts in the PRA area?
+
+### Options
+**IMP2.3. Would the pest have a significant impact on the profitability of a plant production sector?**
+
+### Guidance
+- This is a boolean question with sub-questions answered yes or no.
+- Consider only host plants threatened in EST1 and EST2.
+
+Significant impact means:
+- No effective control measures available and without control would cause substantial losses
+- Control would require implementing measures not currently used in the sector
+
+Insignificant impact means:
+- Measures normally used to control other pests would effectively control this pest
+
+Do NOT take into account:
+- Impacts caused by vector species on its own
+- Size of plant sector relative to other sectors
+
+---
+
+## IMP3. How much direct impact would the pest have on the natural ecosystems in the PRA area?
+
+### Options
+
+**a. No impact**
+Host plants do not occur naturally. No damage observed in natural environments in pest's current distribution. Could damage plant parts (e.g., berries) but would not kill plants or hinder ecosystem functioning.
+
+**b. Moderate impact**
+Could kill individual wild plants, but damage would not decrease host populations or hinder ecosystem functioning.
+
+**c. Significant impact**
+Damages to wild plants could cause decrease in plant populations or hinder ecosystem functioning.
+
+**d. Very significant impact**
+Damage could cause extinction or significant decrease of host species, or cause significant damages to ecosystems.
+
+### Guidance
+
+- Consider all host plants that occur naturally in the PRA area
+- Do NOT take into account impacts caused by vector species on their own
+- If spread depends on vector, consider vector's effect on ecosystem impacts
+
+---
+
+## IMP4. Would the pest have the following environmental or social impacts in the PRA area?
+
+This is a boolean question with sub-questions answered yes or no.
+
+### Sub-questions
+
+**IMP4.1. Social impacts**
+Impacts on amount or quality of food, construction materials and other goods gathered from nature (excluding aesthetic and cultural impacts).
+
+**IMP4.2. Significant aesthetic impacts**
+Negative effect on visual perception of gardens, urban areas or landscapes (e.g., Dutch elm disease, horse chestnut leaf miner).
+
+**IMP4.3. An impact on plants which have an important, recognized position in the culture**
+Traditional food plants (e.g., potato), plants in folktales and mythology (e.g., ash in Nordic mythology), plants with symbolic values (e.g., provincial flowers).
+
+### Guidance
+
+- Consider only hosts threatened in EST1 and EST2
+- If spread depends on vector, consider vector's effect on these impacts
+
+---
+
+## MAN1. Can the pest spread naturally to the PRA area from its current range during the next ten years?
+
+### Options
+
+**a. No, it cannot**
+Current distribution is too far from the PRA area for natural spread to occur.
+
+**b. It can, but it is unlikely or very unlikely**
+Present in Europe but not in neighboring countries, range recently expanded naturally.
+
+**c. It can, but it is very unlikely**
+Present in neighboring countries but range has remained unchanged for a long time.
+
+**d. It can, and it is likely or very likely**
+Current range is close to PRA area and range has recently expanded naturally.
+
+**e. It can, and it is very likely**
+Has expanded naturally and already arrived in vicinity of PRA area.
+
+### Guidance
+
+- See ENT2 instructions for natural spread considerations
+
+---
+
+## MAN2. Is the pest present in the area of the European Union?
+
+### Options
+
+**a. No it is not**
+Not present in the EU. Pests under eradication are not considered present.
+
+**b. Yes, in a small area**
+Distribution in EU is local or fragmented. Present in only 1-3 member states.
+
+**c. Yes, in a large area**
+Present in 4 or more member states.
+
+### Guidance
+
+- Pests under eradication are not considered as present in the EU
+
+---
+
+## MAN3. How difficult is it to detect the pest during inspections?
+
+### Options
+
+**a. Easy**
+Always causes easily detectable symptoms. Large and easily visually detectable.
+
+**b. Difficult**
+May be present without symptoms for a short time. Symptoms difficult to distinguish from other pests.
+
+**c. Nearly impossible**
+May be present for a long time without symptoms. Lives inside plant during some lifecycle stages making detection impossible without destroying plant.
+
+### Guidance
+
+- Consider both inspections in country of origin and import inspections
+
+---
+
+## MAN4. How difficult would it be to eradicate the pest from the PRA area?
+
+### Options
+
+**a. Easy**
+Cannot survive outside host plants and eradication of hosts would be easy. Hosts only in greenhouses and can be eradicated with short break in cultivation (few months).
+
+**b. Rather difficult**
+Eradication methods are expensive or difficult: destruction of large area of field crops or long break in cultivation (over one year).
+
+**c. Very difficult**
+Hosts cultivated on open land and eradication methods are very expensive or nearly impossible: destruction of large area of woody plants.
+
+**d. Impossible**
+Can survive in soil for years without host. Can spread into natural environments. Has several potential hosts growing on open land.
+
+### Guidance
+
+- Consider feasibility and cost of eradication methods
+- Consider whether pest can persist without hosts
+
+---
+
+## MAN5. How difficult would it be to survey the pest's occurrence in the PRA area?
+
+### Options
+
+**a. Easy**
+Easy to detect and hosts grow/cultivated so sparsely they can be comprehensively surveyed. Very unlikely to spread and effective survey methods available.
+
+**b. Rather difficult**
+Easy to detect but hosts too common for comprehensive surveying. Or difficult to detect with no effective survey methods but hosts sparse enough for rather comprehensive surveying.
+
+**c. Very difficult**
+Spreads rather quickly, difficult to detect, no effective survey methods available.
+
+**d. Impossible**
+Spreads very quickly and hosts are widely present (e.g., common forest trees).
+
+### Guidance
+
+Take into account:
+- Pest's natural potential to spread
+- Abundance and distribution of host plants
+- Detectability of the pest
+- Availability and efficacy of survey methods
+
+---

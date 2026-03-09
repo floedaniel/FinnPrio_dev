@@ -49,13 +49,12 @@ EPPOCODES_TO_POPULATE = ["ANOLHO"]
 # Filter by question code (None = process all questions)
 # Example: QUESTION_FILTER = "EST2"  # Only process EST2
 # Pathway questions: "ENT2", "ENT2B", "ENT3", "ENT4"
-QUESTION_FILTER = "EST2:"
+QUESTION_FILTER = "EST2"
 
 # =============================================================================
 # API Keys - Read from files
 OPENAI_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\chatgpt_apikey.txt"
 TAVILY_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\Tavily_key.txt"
-
 
 # Load API keys from files
 def load_api_key(file_path: str) -> str:
@@ -82,7 +81,6 @@ os.environ.update({
     "TOTAL_WORDS": "400",
     "MAX_ITERATIONS": "8",
 })
-
 
 # Excluded domains
 EXCLUDED_DOMAINS = [

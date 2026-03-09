@@ -338,11 +338,19 @@ Diagnostic and troubleshooting utilities:
 
 Python scripts for automatically generating justifications and populating min/likely/max values using AI:
 
+**Main Scripts:**
 - `populate_finnprio_justifications.py`: Main script using GPT Researcher for web research
 - `populate_finnprio_justifications_mcp.py`: MCP server version with caching and persistent connection
 - `populate_finnprio_justifications_anthropic.py`: Claude (Anthropic) version with optimized prompts
 - `populate_finnprio_values.py`: Determines min/likely/max values from justifications
 - `view_justifications.py`: Utility to view generated justifications
+
+**Instructions System (v2.0):**
+- `parse_rmd_instructions.py`: Parses Rmd to structured JSON with options and guidance
+- `instructions_loader.py`: Loads JSON, builds prompts for AI scripts
+- `instructions_cache/`: Cache directory for generated JSON
+
+The instructions system loads question-specific guidance from `information/Instructions_FinnPRIO_assessments.Rmd` with explicit thresholds (km², ha, kg) for accurate AI value selection.
 
 **Workflow:**
 1. Run `populate_finnprio_justifications.py` to generate scientific justifications
@@ -358,6 +366,7 @@ See `python/README.md` for detailed documentation and `python/CHANGELOG.md` for 
 For detailed changelog of all updates, features, bug fixes, and improvements, see **CHANGELOG.md**.
 
 **Latest major updates:**
+- **February 2026**: Instructions System v2.0 - Restructured Rmd file with `### Options` and `### Guidance` sections, explicit km²/ha/kg thresholds, updated parser and loader for cleaner AI prompts
 - **February 2026**: Python folder cleanup - renamed scripts (`populate_finnprio_justifications.py`, `populate_finnprio_justifications_mcp.py`), removed 22 unnecessary files, added MCP server version with caching
 - **February 2026**: Complete UI/UX overhaul with CSS rebuild (v36.0 → v37.3), color-coded sections, enhanced typography, prominent justification boxes, and 8-color pathway tabs
 - **February 2026**: Project restructuring with organized folder structure and cross-platform compatibility

@@ -11,7 +11,7 @@ FinnPRIO Assessor helps evaluate non-native plant pests across five dimensions:
 - **Preventability** - Effectiveness of prevention measures
 - **Controllability** - Effectiveness of control measures
 
-The application produces risk assessments for Sweden, adapted from the original Finnish Food Authority model.
+The application produces risk assessments for Norway, adapted from the original Finnish Food Authority model.
 
 ## Quick Start
 
@@ -37,7 +37,6 @@ Select a database file (.db) when prompted.
 - Multi-user database with concurrent access control
 - Monte Carlo simulations using PERT distributions
 - Word document report generation
-- Full CRUD for pests and assessors
 - Entry pathway assessment with multiple pathways
 
 ## Project Structure
@@ -62,6 +61,4 @@ FinnPRIO_development/
 
 Heikkilä, J., Tuomola, J., Pouta, E., & Peltola, J. (2016). FinnPRIO: A model for ranking plant pests. *Journal of Plant Diseases and Protection*, 123(2), 57-67.
 
-## License
 
-Internal use - Folkehelseinstituttet / Swedish Board of Agriculture

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - March 2026
+
+#### SDM Populator (`scripts/populate database scripts/6_sdm_populator.R`)
+- Now looks for `SDMtune_updated_2` subfolder within each species folder instead of the species folder directly
+- Replaced HTML parser with JSON reader (`model_summary/model_summary.json`) for richer, structured model metrics
+- TIFF lookup now targets `rasters/current_clamped_{EPPOCODE}.tif` specifically
+- Uses model's own `optimal_threshold` from JSON (maxTSS) instead of fixed 0.1 fallback
+- Norway is primary focus; Sweden reported as supplementary only
+- BioCLIM variable codes expanded to full human-readable names in justification text
+- Justification restructured: establishment potential first, then future projections, then model performance details
+- Removed boilerplate section headers and source tags from justification output
+
 ### Fixed - February 2026
 
 #### Critical Save Handling Fixes

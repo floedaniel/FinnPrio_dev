@@ -16,13 +16,13 @@
 # =============================================================================
 
 # Database Path - THIS WILL BE USED FOR ALL POPULATE SCRIPTS
-DB_PATH <- "./databases/selam_database_2026/selam_test_species.db"
+DB_PATH <- "./databases/daniel_database_2026/test_sdm.db"
 
 # EPPO API Key File
 API_KEY_FILE <- "C:/Users/dafl/Desktop/API keys/EPPO_beta.txt"
 
 # EPPO Codes to Populate (for script 1)
-EPPO_CODES <- c("PHMPOM", "XANTEU", "XANTOR")
+EPPO_CODES <- c("ANOLHO", "ARGPLE", "CERTCA", "CHRBFE", "CHRBMA", "DACUDO", "DENDSU", "EPIXCU", "EPIXSU", "EPIXTU", "LAPHFR", "MALADI", "PHECPI", "RHYCFE", "XYLOCH")
 
 # Default Assessor ID (for script 2)
 DEFAULT_ASSESSOR_ID <- 1L
