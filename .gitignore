@@ -88,3 +88,6 @@ assessment_report_*.docx
 # IDE folders
 .idea/
 *.Rproj.user/
+
+*.Rhistory
+_ul-*
