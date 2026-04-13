@@ -681,6 +681,7 @@ async def research_justification(pest_name: str, question_code: str, question_te
         report_type="research_report",
         tone=Tone.Formal,
         report_source=report_source,
+        verbose=VERBOSE,
     )
 
     try:
