@@ -199,6 +199,7 @@ def copy_species_docs_to_temp(eppo_code: str) -> bool:
     if temp_path.exists():
         shutil.rmtree(temp_path)
     temp_path.mkdir(parents=True, exist_ok=True)
+    os.environ['DOC_PATH'] = str(temp_path.absolute())
 
     # Find species folder
     species_path = get_species_docs_path(eppo_code)
