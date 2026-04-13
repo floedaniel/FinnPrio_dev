@@ -38,7 +38,7 @@ from instructions_loader import build_justification_prompt
 # Skip assessments that already have a justification (avoids overwriting existing work)
 SKIP_EXISTING_JUSTIFICATION = True
 
-VERBOSE = False  # Set True to see GPT Researcher internal logs
+VERBOSE = True  # Set True to see GPT Researcher internal logs
 
 # DATABASE PATH - UPDATE THIS IF YOU ADDED PATHWAYS
 # CURRENT SETTING: Using AI-enhanced database (with existing justifications)
@@ -727,127 +727,129 @@ async def process_assessment(db_path: str, assessment_id: int = None,
     hosts = assessment_info.get('hosts', '')
     # Set up local documents for hybrid research
     use_hybrid = copy_species_docs_to_temp(eppo_code)
+    try:
+        if question_filter:
+            # Filter to specific question code (e.g., EST2, ENT2A)
+            # Strip trailing dots for comparison (codes stored as "EST2." but user enters "EST2")
+            filter_code = question_filter.upper().rstrip('.')
+            answers = [a for a in answers if a['code'].upper().rstrip('.') == filter_code]
+            print(f"🔍 Filtering to question: {filter_code}")
+            if not answers:
+                print(f"⚠️  No matching regular question found for {filter_code}")
 
-    if question_filter:
-        # Filter to specific question code (e.g., EST2, ENT2A)
-        # Strip trailing dots for comparison (codes stored as "EST2." but user enters "EST2")
-        filter_code = question_filter.upper().rstrip('.')
-        answers = [a for a in answers if a['code'].upper().rstrip('.') == filter_code]
-        print(f"🔍 Filtering to question: {filter_code}")
-        if not answers:
-            print(f"⚠️  No matching regular question found for {filter_code}")
+        if limit_questions:
+            answers = answers[:limit_questions]
+            print(f"⚠️  Limited to {limit_questions} questions")
 
-    if limit_questions:
-        answers = answers[:limit_questions]
-        print(f"⚠️  Limited to {limit_questions} questions")
+        print(f"\n📊 Assessment: {pest_name} ({eppo_code})")
+        print(f"📊 Regular questions: {len(answers)}")
+        if hosts:
+            print(f"🌱 Hosts: {hosts[:100]}{'...' if len(hosts) > 100 else ''}")
 
-    print(f"\n📊 Assessment: {pest_name} ({eppo_code})")
-    print(f"📊 Regular questions: {len(answers)}")
-    if hosts:
-        print(f"🌱 Hosts: {hosts[:100]}{'...' if len(hosts) > 100 else ''}")
+        # Process regular questions
+        print("\n" + "=" * 80)
+        print("PROCESSING REGULAR QUESTIONS")
+        print("=" * 80)
 
-    # Process regular questions
-    print("\n" + "=" * 80)
-    print("PROCESSING REGULAR QUESTIONS")
-    print("=" * 80)
+        for i, answer in enumerate(answers, 1):
+            print(f"\n[{i}/{len(answers)}] {answer['code']}")
 
-    for i, answer in enumerate(answers, 1):
-        print(f"\n[{i}/{len(answers)}] {answer['code']}")
-
-        existing = answer['existing_justification']
-        if existing:
-            print(f"📄 Found existing ({len(existing)} chars)")
-            if skip_existing:
-                print(f"⏭️  Skipped (existing justification)")
-                continue
-
-        try:
-            ai_text = await research_justification(
-                pest_name=pest_name,
-                question_code=answer['code'],
-                question_text=answer['text'],
-                question_info=answer['info'],
-                exclude_domains=exclude_domains or [],
-                hosts=hosts,
-                use_hybrid=use_hybrid
-            )
-
-            combined = f"{existing}\n\n{ai_text}" if existing else ai_text
-            update_answer_justification(db_path, answer['idAnswer'], combined)
-
-            print(f"✅ Updated ({len(combined)} chars)")
-        except Exception as e:
-            print(f"❌ Error: {str(e)}")
-
-    # Process pathway questions
-    if process_pathways:
-        try:
-            pathways = get_assessment_pathways(db_path, assessment_id)
-        except Exception as e:
-            print(f"\n⚠️  Error getting pathways: {e}")
-            pathways = []
-
-        if pathways:
-            print(f"\n{'=' * 80}")
-            print(f"PROCESSING PATHWAY QUESTIONS ({len(pathways)} pathways)")
-            print(f"{'=' * 80}")
+            existing = answer['existing_justification']
+            if existing:
+                print(f"📄 Found existing ({len(existing)} chars)")
+                if skip_existing:
+                    print(f"⏭️  Skipped (existing justification)")
+                    continue
 
             try:
-                pathway_questions = get_pathway_questions(db_path)
+                ai_text = await research_justification(
+                    pest_name=pest_name,
+                    question_code=answer['code'],
+                    question_text=answer['text'],
+                    question_info=answer['info'],
+                    exclude_domains=exclude_domains or [],
+                    hosts=hosts,
+                    use_hybrid=use_hybrid
+                )
+
+                combined = f"{existing}\n\n{ai_text}" if existing else ai_text
+                update_answer_justification(db_path, answer['idAnswer'], combined)
+
+                print(f"✅ Updated ({len(combined)} chars)")
             except Exception as e:
-                print(f"\n⚠️  Error getting pathway questions: {e}")
-                return
+                print(f"❌ Error: {str(e)}")
 
-            # Filter pathway questions if question_filter is set
-            if question_filter:
-                filter_code = question_filter.upper().rstrip('.')
-                pathway_questions = [pq for pq in pathway_questions
-                                    if pq['code'].upper().rstrip('.') == filter_code]
-                if not pathway_questions:
-                    print(f"⚠️  No matching pathway question found for {filter_code}")
+        # Process pathway questions
+        if process_pathways:
+            try:
+                pathways = get_assessment_pathways(db_path, assessment_id)
+            except Exception as e:
+                print(f"\n⚠️  Error getting pathways: {e}")
+                pathways = []
 
-            total = len(pathways) * len(pathway_questions)
-            count = 0
+            if pathways:
+                print(f"\n{'=' * 80}")
+                print(f"PROCESSING PATHWAY QUESTIONS ({len(pathways)} pathways)")
+                print(f"{'=' * 80}")
 
-            for pathway in pathways:
-                pathway_name = pathway['name']
-                print(f"\n📍 Pathway: {pathway_name}")
+                try:
+                    pathway_questions = get_pathway_questions(db_path)
+                except Exception as e:
+                    print(f"\n⚠️  Error getting pathway questions: {e}")
+                    return
 
-                for pq in pathway_questions:
-                    count += 1
-                    print(f"\n[{count}/{total}] {pq['code']} for {pathway_name}")
+                # Filter pathway questions if question_filter is set
+                if question_filter:
+                    filter_code = question_filter.upper().rstrip('.')
+                    pathway_questions = [pq for pq in pathway_questions
+                                        if pq['code'].upper().rstrip('.') == filter_code]
+                    if not pathway_questions:
+                        print(f"⚠️  No matching pathway question found for {filter_code}")
 
-                    existing = get_existing_pathway_justification(
-                        db_path, pathway['idEntryPathway'], pq['idPathQuestion'])
+                total = len(pathways) * len(pathway_questions)
+                count = 0
 
-                    if existing:
-                        print(f"📄 Found existing ({len(existing)} chars)")
-                        if skip_existing:
-                            print(f"⏭️  Skipped (existing justification)")
-                            continue
+                for pathway in pathways:
+                    pathway_name = pathway['name']
+                    print(f"\n📍 Pathway: {pathway_name}")
 
-                    try:
-                        ai_text = await research_justification(
-                            pest_name=pest_name,
-                            question_code=pq['code'],
-                            question_text=pq['text'],
-                            question_info=pq['info'],
-                            pathway_name=pathway_name,
-                            exclude_domains=exclude_domains or [],
-                            hosts=hosts,
-                            use_hybrid=use_hybrid
-                        )
+                    for pq in pathway_questions:
+                        count += 1
+                        print(f"\n[{count}/{total}] {pq['code']} for {pathway_name}")
 
-                        combined = f"{existing}\n\n{ai_text}" if existing else ai_text
-                        update_pathway_justification(
-                            db_path, pathway['idEntryPathway'],
-                            pq['idPathQuestion'], combined)
+                        existing = get_existing_pathway_justification(
+                            db_path, pathway['idEntryPathway'], pq['idPathQuestion'])
 
-                        print(f"✅ Updated ({len(combined)} chars)")
-                    except Exception as e:
-                        print(f"❌ Error: {str(e)}")
-        else:
-            print("\nℹ️  No pathways selected for this assessment")
+                        if existing:
+                            print(f"📄 Found existing ({len(existing)} chars)")
+                            if skip_existing:
+                                print(f"⏭️  Skipped (existing justification)")
+                                continue
+
+                        try:
+                            ai_text = await research_justification(
+                                pest_name=pest_name,
+                                question_code=pq['code'],
+                                question_text=pq['text'],
+                                question_info=pq['info'],
+                                pathway_name=pathway_name,
+                                exclude_domains=exclude_domains or [],
+                                hosts=hosts,
+                                use_hybrid=use_hybrid
+                            )
+
+                            combined = f"{existing}\n\n{ai_text}" if existing else ai_text
+                            update_pathway_justification(
+                                db_path, pathway['idEntryPathway'],
+                                pq['idPathQuestion'], combined)
+
+                            print(f"✅ Updated ({len(combined)} chars)")
+                        except Exception as e:
+                            print(f"❌ Error: {str(e)}")
+            else:
+                print("\nℹ️  No pathways selected for this assessment")
+    finally:
+        cleanup_temp_docs()
 
 async def main(source_db: str = DEFAULT_DB_PATH,
                output_dir: str = DEFAULT_OUTPUT_DIR,
@@ -929,25 +931,21 @@ async def main(source_db: str = DEFAULT_DB_PATH,
         print(f"\nℹ️  Processing all assessments: {len(assessment_ids)} total")
 
     # Process each assessment
-    try:
-        for idx, aid in enumerate(assessment_ids, 1):
-            if len(assessment_ids) > 1:
-                print("\n" + "=" * 80)
-                print(f"ASSESSMENT {idx}/{len(assessment_ids)} (ID: {aid})")
-                print("=" * 80)
+    for idx, aid in enumerate(assessment_ids, 1):
+        if len(assessment_ids) > 1:
+            print("\n" + "=" * 80)
+            print(f"ASSESSMENT {idx}/{len(assessment_ids)} (ID: {aid})")
+            print("=" * 80)
 
-            await process_assessment(
-                db_path=working_db,
-                assessment_id=aid,
-                exclude_domains=exclude_domains,
-                limit_questions=limit_questions,
-                process_pathways=process_pathways,
-                skip_existing=skip_existing,
-                question_filter=effective_question_filter
-            )
-    finally:
-        # Clean up temp documents folder
-        cleanup_temp_docs()
+        await process_assessment(
+            db_path=working_db,
+            assessment_id=aid,
+            exclude_domains=exclude_domains,
+            limit_questions=limit_questions,
+            process_pathways=process_pathways,
+            skip_existing=skip_existing,
+            question_filter=effective_question_filter
+        )
 
     print("\n" + "=" * 80)
     print("✅ COMPLETED")
