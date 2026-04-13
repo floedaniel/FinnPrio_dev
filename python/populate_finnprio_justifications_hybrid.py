@@ -650,7 +650,7 @@ async def research_justification(pest_name: str, question_code: str, question_te
                                  question_info: str = "", pathway_name: str = None,
                                  exclude_domains: List[str] = None,
                                  hosts: str = None,
-                                 use_hybrid: bool = False) -> str:
+                                 use_hybrid: bool = False) -> Tuple[str, float]:
     """Research a single justification using GPT Researcher."""
 
     pathway_text = f" (Pathway: {pathway_name})" if pathway_name else ""
@@ -696,10 +696,12 @@ async def research_justification(pest_name: str, question_code: str, question_te
         # Clean markdown
         report = clean_markdown_formatting(report)
 
-        return report
+        cost = researcher.get_costs()
+        print(f"💰 Cost: ${cost:.4f}")
+        return report, cost
     except Exception as e:
         print(f"ERROR: {str(e)}")
-        return f"ERROR: {str(e)}"
+        return f"ERROR: {str(e)}", 0.0
 
 # =============================================================================
 # MAIN WORKFLOW
@@ -710,7 +712,8 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                              limit_questions: int = None,
                              process_pathways: bool = True,
                              skip_existing: bool = True,
-                             question_filter: str = None):
+                             question_filter: str = None,
+                             total_cost: list = None):
     """Process assessment: regular questions + pathway questions."""
 
     print("\n📚 Loading assessment data...")
@@ -727,6 +730,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
     hosts = assessment_info.get('hosts', '')
     # Set up local documents for hybrid research
     use_hybrid = copy_species_docs_to_temp(eppo_code)
+    assessment_cost = 0.0
     try:
         if question_filter:
             # Filter to specific question code (e.g., EST2, ENT2A)
@@ -762,7 +766,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                     continue
 
             try:
-                ai_text = await research_justification(
+                ai_text, call_cost = await research_justification(
                     pest_name=pest_name,
                     question_code=answer['code'],
                     question_text=answer['text'],
@@ -771,6 +775,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                     hosts=hosts,
                     use_hybrid=use_hybrid
                 )
+                assessment_cost += call_cost
 
                 combined = f"{existing}\n\n{ai_text}" if existing else ai_text
                 update_answer_justification(db_path, answer['idAnswer'], combined)
@@ -827,7 +832,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                                 continue
 
                         try:
-                            ai_text = await research_justification(
+                            ai_text, call_cost = await research_justification(
                                 pest_name=pest_name,
                                 question_code=pq['code'],
                                 question_text=pq['text'],
@@ -837,6 +842,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                                 hosts=hosts,
                                 use_hybrid=use_hybrid
                             )
+                            assessment_cost += call_cost
 
                             combined = f"{existing}\n\n{ai_text}" if existing else ai_text
                             update_pathway_justification(
@@ -850,6 +856,9 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                 print("\nℹ️  No pathways selected for this assessment")
     finally:
         cleanup_temp_docs()
+        if total_cost is not None:
+            total_cost[0] += assessment_cost
+        print(f"💰 Assessment total: ${assessment_cost:.4f}")
 
 async def main(source_db: str = DEFAULT_DB_PATH,
                output_dir: str = DEFAULT_OUTPUT_DIR,
@@ -931,6 +940,7 @@ async def main(source_db: str = DEFAULT_DB_PATH,
         print(f"\nℹ️  Processing all assessments: {len(assessment_ids)} total")
 
     # Process each assessment
+    total_cost = [0.0]
     for idx, aid in enumerate(assessment_ids, 1):
         if len(assessment_ids) > 1:
             print("\n" + "=" * 80)
@@ -944,9 +954,11 @@ async def main(source_db: str = DEFAULT_DB_PATH,
             limit_questions=limit_questions,
             process_pathways=process_pathways,
             skip_existing=skip_existing,
-            question_filter=effective_question_filter
+            question_filter=effective_question_filter,
+            total_cost=total_cost,
         )
 
+    print(f"💰 Total API cost: ${total_cost[0]:.4f}")
     print("\n" + "=" * 80)
     print("✅ COMPLETED")
     print("=" * 80)
