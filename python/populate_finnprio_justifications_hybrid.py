@@ -38,7 +38,7 @@ from instructions_loader import build_justification_prompt
 # Skip assessments that already have a justification (avoids overwriting existing work)
 SKIP_EXISTING_JUSTIFICATION = True
 
-VERBOSE = True  # Set True to see GPT Researcher internal logs
+VERBOSE = False  # Set True to see GPT Researcher internal logs
 
 # DATABASE PATH - UPDATE THIS IF YOU ADDED PATHWAYS
 # CURRENT SETTING: Using AI-enhanced database (with existing justifications)
