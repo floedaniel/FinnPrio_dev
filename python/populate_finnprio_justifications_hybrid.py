@@ -19,6 +19,7 @@ import sqlite3
 import shutil
 from pathlib import Path
 from gpt_researcher import GPTResearcher
+from gpt_researcher.utils.enum import Tone
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 import re
@@ -34,9 +35,10 @@ from instructions_loader import build_justification_prompt
 #  THIS SCRIPT CREATES A NEW COPY OF YOUR DATABASE EACH TIME IT RUNS!
 #  Using original database again will lose all AI work!
 
-# Skip Existing Justifications
-#  KEEP THIS AS True - It will only add justifications for NEW pathway questions
-SKIP_EXISTING_JUSTIFICATION = False # True
+# Skip assessments that already have a justification (avoids overwriting existing work)
+SKIP_EXISTING_JUSTIFICATION = True
+
+VERBOSE = False  # Set True to see GPT Researcher internal logs
 
 # DATABASE PATH - UPDATE THIS IF YOU ADDED PATHWAYS
 # CURRENT SETTING: Using AI-enhanced database (with existing justifications)
@@ -47,19 +49,19 @@ DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\F
 
 # Filter by EPPO codes (empty list = process all species)
 # Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
-EPPOCODES_TO_POPULATE = ["ANOLHO"]
+EPPOCODES_TO_POPULATE = []
 
 # Filter by question code (None = process all questions)
 # Example: QUESTION_FILTER = "EST2"  # Only process EST2
 # Pathway questions: "ENT2", "ENT2B", "ENT3", "ENT4"
-QUESTION_FILTER = "EST2"
+QUESTION_FILTER = None
 
 # =============================================================================
 # HYBRID RESEARCH - LOCAL DOCUMENTS CONFIGURATION
 # =============================================================================
 
 # Base path where species folders with PDFs are stored
-SPECIES_DOCS_BASE_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\VKM Data\26.08.2024_lopende_oppdrag_plantehelse\Species"
+SPECIES_DOCS_BASE_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\Prosjektdata - Dokumenter\VKM Data\26.08.2024_lopende_oppdrag_plantehelse\Species"
 
 # Temp folder name for GPT Researcher local docs (created in script directory)
 TEMP_DOCS_FOLDER = "my-docs"
@@ -69,7 +71,7 @@ DOCUMENT_EXTENSIONS = {".pdf", ".txt", ".docx", ".doc"}
 
 # =============================================================================
 # API Keys - Read from files
-OPENAI_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\chatgpt_apikey.txt"
+OPENAI_API_KEY_FILE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\API keys\tore_vkm_openai.txt"
 TAVILY_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\Tavily_key.txt"
 
 # Load API keys from files
@@ -89,13 +91,18 @@ os.environ['TAVILY_API_KEY'] = load_api_key(TAVILY_API_KEY_FILE)
 # GPT Researcher Configuration
 os.environ.update({
     "TEMPERATURE": "0.1",
-    "LLM_MODEL": "gpt-4o-mini",
-    "LLM_MAX_TOKENS": "4096",
+    "FAST_LLM": "openai:gpt-4o-mini",   # Quick tasks: summarization, sub-queries
+    "SMART_LLM": "openai:gpt-4.1",      # Complex reasoning: report writing (long response support)
+    "STRATEGIC_LLM": "openai:o4-mini",  # Planning: agent/query selection
+    "FAST_TOKEN_LIMIT": "3000",
+    "SMART_TOKEN_LIMIT": "6000",
+    "STRATEGIC_TOKEN_LIMIT": "4000",
     "DEEP_RESEARCH_BREADTH": "3",
     "DEEP_RESEARCH_DEPTH": "2",
     "MAX_SEARCH_RESULTS_PER_QUERY": "10",
+    "MAX_ITERATIONS": "3",
     "TOTAL_WORDS": "400",
-    "MAX_ITERATIONS": "8",
+    "REASONING_EFFORT": "medium",   # o-series reasoning level for STRATEGIC_LLM
 })
 
 # Excluded domains
@@ -671,7 +678,7 @@ async def research_justification(pest_name: str, question_code: str, question_te
     researcher = GPTResearcher(
         query=query,
         report_type="research_report",
-        tone="formal",
+        tone=Tone.Formal,
         report_source=report_source,
     )
 
