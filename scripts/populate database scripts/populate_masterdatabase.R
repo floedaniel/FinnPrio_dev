@@ -64,3 +64,47 @@ for (d in master_dirs) {
 
 stop_if(nrow(source_files) == 0, "No .db files found in any 4_master folder.")
 cat("\nTotal source files:", nrow(source_files), "\n\n")
+
+# =============================================================================
+# BACKUP EXISTING OUTPUT + CREATE SCHEMA FROM TEMPLATE
+# =============================================================================
+
+if (!dir.exists(OUTPUT_FOLDER)) dir.create(OUTPUT_FOLDER, recursive = TRUE)
+
+# Backup existing master if it exists
+if (file.exists(OUTPUT_PATH)) {
+  base_backup <- file.path(OUTPUT_FOLDER,
+    paste0("master_database_2026_backup_", Sys.Date(), ".db"))
+
+  # Find unique backup name if date collision
+  backup_path <- base_backup
+  suffix <- 1L
+  while (file.exists(backup_path)) {
+    backup_path <- sub("\\.db$", paste0("_", suffix, ".db"), base_backup)
+    suffix <- suffix + 1L
+  }
+
+  ok <- file.copy(OUTPUT_PATH, backup_path)
+  stop_if(!ok, paste("Backup failed. Check disk space and permissions.\n  From:", OUTPUT_PATH, "\n  To:", backup_path))
+  cat("Backed up existing master to:", basename(backup_path), "\n")
+  file.remove(OUTPUT_PATH)
+}
+
+# Use first source DB as schema template
+template_path <- source_files$path[1]
+cat("Creating output DB from template:", source_files$source_db[1], "/", basename(template_path), "\n")
+ok <- file.copy(template_path, OUTPUT_PATH)
+stop_if(!ok, paste("Failed to copy template DB to:", OUTPUT_PATH))
+
+con_out <- dbConnect(SQLite(), OUTPUT_PATH)
+on.exit(dbDisconnect(con_out), add = TRUE)
+
+# Clear all data tables; keep reference tables (questions, pathways, etc.)
+cat("Clearing data tables...\n")
+for (tbl in c("simulationSummaries", "simulations", "pathwayAnswers",
+              "entryPathways", "answers", "threatXassessment",
+              "assessments", "pests", "assessors")) {
+  dbExecute(con_out, paste("DELETE FROM", tbl))
+}
+dbExecute(con_out, "UPDATE dbStatus SET inUse = 0, timeStamp = CURRENT_TIMESTAMP")
+cat("Schema ready.\n\n")
