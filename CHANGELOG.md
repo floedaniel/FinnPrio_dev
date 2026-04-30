@@ -38,15 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ##### Bug 1 — `rpert_from_tag`: invalid PERT parameters produce NaN for entire assessment (`R/simulations.R` line 7–13)
 
 - **Symptom**: `Warning: Some values of mode < min or mode > max` and `Warning: NaN in rpert` during batch simulation. Affected assessments produced NaN for every one of the 50 000 iterations, making their simulation summaries meaningless (all statistics stored as `Inf`/`-Inf` or `NaN`).
-- **Root cause**: `rpert_from_tag()` passed the raw `min_points`, `likely_points`, `max_points` values directly to `rpert()` without validating that `min ≤ mode ≤ max`. The PERT distribution requires this ordering; violating it returns NaN for every draw. The ordering can be violated in two ways:
-  1. **Sub-question summing** — IMP2 and IMP4 are each composed of three sub-questions (IMP2.1/2.2/2.3 and IMP4.1/4.2/4.3) whose point values are summed before being passed to `rpert`. If an assessor selected a higher option for `min` than for `likely` on any sub-question, the sums can produce `min_points_sum > likely_points_sum`, reversing the expected ordering.
-  2. **Direct inversion** — any question where the selected `min` option has more points than the selected `likely` option (e.g., min = "c" / 3 pts, likely = "a" / 1 pt).
+- **Root cause**: `rpert_from_tag()` passed the raw `min_points`, `likely_points`, `max_points` values directly to `rpert()` without validating that `min ≤ mode ≤ max`. The PERT distribution requires this ordering; violating it returns NaN for every draw. The Shiny UI enforces this ordering for human-entered answers, so the violation can only originate from data written directly to the database programmatically — specifically by the Python AI populator (`populate_finnprio_values.py`) or by Excel-migration scripts, both of which bypass the UI's column-ordering constraint.
 - **Fix**: Sort `min`/`max` before use (swap if `min > max`), then clamp `mode` to `[min, max]`:
   ```r
   if (points[1] > points[3]) points[c(1, 3)] <- points[c(3, 1)]
   points[2] <- pmin(pmax(points[2], points[1]), points[3])
   ```
-- **Why this fix**: The underlying data represents a legitimate assessor judgment even when min/max are inverted — the assessor intended a spread around a most-likely value. Clamping mode to the valid range preserves the intended distribution shape and prevents NaN propagation. Silently discarding the assessment (an alternative) would hide data quality issues without giving the assessor a chance to correct them.
+- **Why this fix**: Programmatically-inserted data can contain ordering violations that the UI would have prevented. Rather than crashing or silently discarding the assessment, the simulation corrects the parameter ordering and proceeds — preserving the assessor's intended spread and preventing NaN propagation.
 
 ##### Bug 2 — `scorePathway` assignment: deprecated `case_when()` with scalar condition and vector RHS (`R/simulations.R` lines 105–112, 133–140)
 
