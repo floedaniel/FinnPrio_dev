@@ -285,3 +285,107 @@ for (i in seq_len(nrow(source_files))) {
 
 cat(sprintf("  Assessments: %d merged (%d skipped)\n\n",
             nrow(assessment_id_map), n_skipped_ass))
+
+# =============================================================================
+# HELPER: merge a table that maps by idAssessment only
+# =============================================================================
+merge_by_assessment <- function(table_name, insert_sql, params_fn) {
+  cat(sprintf("=== Merging %s ===\n", table_name))
+  n <- 0L
+  for (i in seq_len(nrow(source_files))) {
+    src <- source_files$source_db[i]
+    tryCatch({
+      con <- dbConnect(SQLite(), source_files$path[i])
+      on.exit(dbDisconnect(con), add = TRUE)
+      rows <- dbReadTable(con, table_name)
+      dbDisconnect(con); on.exit()
+      if (nrow(rows) == 0) return(invisible())
+      for (j in seq_len(nrow(rows))) {
+        row <- rows[j, ]
+        new_ass <- assessment_id_map %>%
+          filter(source_db == src, old_idAssessment == row$idAssessment) %>%
+          pull(new_idAssessment)
+        if (length(new_ass) == 0) next
+        dbExecute(con_out, insert_sql, params = params_fn(row, new_ass[1]))
+        n <- n + 1L
+      }
+    }, error = function(e) warn_skip(paste("Cannot read", table_name, "from", src, ":", e$message)))
+  }
+  cat(sprintf("  %s: %d rows merged\n\n", table_name, n))
+  invisible(n)
+}
+
+# -- answers --
+merge_by_assessment("answers",
+  "INSERT INTO answers (idAssessment, idQuestion, min, likely, max, justification)
+   VALUES (?, ?, ?, ?, ?, ?)",
+  function(r, new_ass) list(new_ass, r$idQuestion, r$min, r$likely, r$max, r$justification))
+
+# -- threatXassessment --
+merge_by_assessment("threatXassessment",
+  "INSERT INTO threatXassessment (idAssessment, idThrSect) VALUES (?, ?)",
+  function(r, new_ass) list(new_ass, r$idThrSect))
+
+# -- entryPathways (needs its own mapping for pathwayAnswers) --
+cat("=== Merging entryPathways ===\n")
+entrypath_id_map <- data.frame(
+  source_db          = character(),
+  old_idEntryPathway = integer(),
+  new_idEntryPathway = integer(),
+  stringsAsFactors   = FALSE
+)
+
+for (i in seq_len(nrow(source_files))) {
+  src <- source_files$source_db[i]
+  tryCatch({
+    con <- dbConnect(SQLite(), source_files$path[i])
+    on.exit(dbDisconnect(con), add = TRUE)
+    rows <- dbReadTable(con, "entryPathways")
+    dbDisconnect(con); on.exit()
+    if (nrow(rows) == 0) next
+    for (j in seq_len(nrow(rows))) {
+      row <- rows[j, ]
+      new_ass <- assessment_id_map %>%
+        filter(source_db == src, old_idAssessment == row$idAssessment) %>%
+        pull(new_idAssessment)
+      if (length(new_ass) == 0) next
+      dbExecute(con_out,
+        "INSERT INTO entryPathways (idAssessment, idPathway) VALUES (?, ?)",
+        params = list(new_ass[1], row$idPathway))
+      new_id <- dbGetQuery(con_out, "SELECT last_insert_rowid() AS id")$id
+      entrypath_id_map <- rbind(entrypath_id_map, data.frame(
+        source_db = src, old_idEntryPathway = row$idEntryPathway,
+        new_idEntryPathway = new_id, stringsAsFactors = FALSE))
+    }
+  }, error = function(e) warn_skip(paste("Cannot read entryPathways from", src, ":", e$message)))
+}
+cat(sprintf("  entryPathways: %d rows merged\n\n", nrow(entrypath_id_map)))
+
+# -- pathwayAnswers --
+cat("=== Merging pathwayAnswers ===\n")
+n_pa <- 0L
+for (i in seq_len(nrow(source_files))) {
+  src <- source_files$source_db[i]
+  tryCatch({
+    con <- dbConnect(SQLite(), source_files$path[i])
+    on.exit(dbDisconnect(con), add = TRUE)
+    rows <- dbReadTable(con, "pathwayAnswers")
+    dbDisconnect(con); on.exit()
+    if (nrow(rows) == 0) next
+    for (j in seq_len(nrow(rows))) {
+      row <- rows[j, ]
+      new_ep <- entrypath_id_map %>%
+        filter(source_db == src, old_idEntryPathway == row$idEntryPathway) %>%
+        pull(new_idEntryPathway)
+      if (length(new_ep) == 0) next
+      dbExecute(con_out,
+        "INSERT INTO pathwayAnswers (idEntryPathway, idPathQuestion,
+                                     min, likely, max, justification)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        params = list(new_ep[1], row$idPathQuestion,
+                      row$min, row$likely, row$max, row$justification))
+      n_pa <- n_pa + 1L
+    }
+  }, error = function(e) warn_skip(paste("Cannot read pathwayAnswers from", src, ":", e$message)))
+}
+cat(sprintf("  pathwayAnswers: %d rows merged\n\n", n_pa))
