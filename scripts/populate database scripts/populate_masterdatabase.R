@@ -118,13 +118,15 @@ all_assessors <- list()
 for (i in seq_len(nrow(source_files))) {
   tryCatch({
     con <- dbConnect(SQLite(), source_files$path[i])
-    on.exit(dbDisconnect(con), add = TRUE)
     rows <- dbReadTable(con, "assessors")
-    dbDisconnect(con); on.exit()
+    dbDisconnect(con)
     if (nrow(rows) == 0) next
     rows$source_db <- source_files$source_db[i]
     all_assessors[[i]] <- rows
-  }, error = function(e) warn_skip(paste("Cannot read assessors from", source_files$source_db[i], ":", e$message)))
+  }, error = function(e) {
+    try(dbDisconnect(con), silent = TRUE)
+    warn_skip(paste("Cannot read assessors from", source_files$source_db[i], ":", e$message))
+  })
 }
 
 all_assessors_df <- bind_rows(all_assessors)
@@ -173,13 +175,15 @@ all_pests <- list()
 for (i in seq_len(nrow(source_files))) {
   tryCatch({
     con <- dbConnect(SQLite(), source_files$path[i])
-    on.exit(dbDisconnect(con), add = TRUE)
     rows <- dbReadTable(con, "pests")
-    dbDisconnect(con); on.exit()
+    dbDisconnect(con)
     if (nrow(rows) == 0) next
     rows$source_db <- source_files$source_db[i]
     all_pests[[i]] <- rows
-  }, error = function(e) warn_skip(paste("Cannot read pests from", source_files$source_db[i], ":", e$message)))
+  }, error = function(e) {
+    try(dbDisconnect(con), silent = TRUE)
+    warn_skip(paste("Cannot read pests from", source_files$source_db[i], ":", e$message))
+  })
 }
 
 all_pests_df <- bind_rows(all_pests)
@@ -243,9 +247,8 @@ for (i in seq_len(nrow(source_files))) {
   src <- source_files$source_db[i]
   tryCatch({
     con <- dbConnect(SQLite(), source_files$path[i])
-    on.exit(dbDisconnect(con), add = TRUE)
     rows <- dbReadTable(con, "assessments")
-    dbDisconnect(con); on.exit()
+    dbDisconnect(con)
     if (nrow(rows) == 0) next
 
     for (j in seq_len(nrow(rows))) {
@@ -280,7 +283,10 @@ for (i in seq_len(nrow(source_files))) {
         source_db = src, old_idAssessment = ass$idAssessment,
         new_idAssessment = new_id, stringsAsFactors = FALSE))
     }
-  }, error = function(e) warn_skip(paste("Cannot read assessments from", src, ":", e$message)))
+  }, error = function(e) {
+    try(dbDisconnect(con), silent = TRUE)
+    warn_skip(paste("Cannot read assessments from", src, ":", e$message))
+  })
 }
 
 cat(sprintf("  Assessments: %d merged (%d skipped)\n\n",
@@ -299,7 +305,7 @@ merge_by_assessment <- function(table_name, insert_sql, params_fn) {
       on.exit(dbDisconnect(con), add = TRUE)
       rows <- dbReadTable(con, table_name)
       dbDisconnect(con); on.exit()
-      if (nrow(rows) == 0) return(invisible())
+      if (nrow(rows) == 0) next
       for (j in seq_len(nrow(rows))) {
         row <- rows[j, ]
         new_ass <- assessment_id_map %>%
@@ -316,13 +322,13 @@ merge_by_assessment <- function(table_name, insert_sql, params_fn) {
 }
 
 # -- answers --
-merge_by_assessment("answers",
+n_answers <- merge_by_assessment("answers",
   "INSERT INTO answers (idAssessment, idQuestion, min, likely, max, justification)
    VALUES (?, ?, ?, ?, ?, ?)",
   function(r, new_ass) list(new_ass, r$idQuestion, r$min, r$likely, r$max, r$justification))
 
 # -- threatXassessment --
-merge_by_assessment("threatXassessment",
+n_threats <- merge_by_assessment("threatXassessment",
   "INSERT INTO threatXassessment (idAssessment, idThrSect) VALUES (?, ?)",
   function(r, new_ass) list(new_ass, r$idThrSect))
 
@@ -339,9 +345,8 @@ for (i in seq_len(nrow(source_files))) {
   src <- source_files$source_db[i]
   tryCatch({
     con <- dbConnect(SQLite(), source_files$path[i])
-    on.exit(dbDisconnect(con), add = TRUE)
     rows <- dbReadTable(con, "entryPathways")
-    dbDisconnect(con); on.exit()
+    dbDisconnect(con)
     if (nrow(rows) == 0) next
     for (j in seq_len(nrow(rows))) {
       row <- rows[j, ]
@@ -357,7 +362,10 @@ for (i in seq_len(nrow(source_files))) {
         source_db = src, old_idEntryPathway = row$idEntryPathway,
         new_idEntryPathway = new_id, stringsAsFactors = FALSE))
     }
-  }, error = function(e) warn_skip(paste("Cannot read entryPathways from", src, ":", e$message)))
+  }, error = function(e) {
+    try(dbDisconnect(con), silent = TRUE)
+    warn_skip(paste("Cannot read entryPathways from", src, ":", e$message))
+  })
 }
 cat(sprintf("  entryPathways: %d rows merged\n\n", nrow(entrypath_id_map)))
 
@@ -368,9 +376,8 @@ for (i in seq_len(nrow(source_files))) {
   src <- source_files$source_db[i]
   tryCatch({
     con <- dbConnect(SQLite(), source_files$path[i])
-    on.exit(dbDisconnect(con), add = TRUE)
     rows <- dbReadTable(con, "pathwayAnswers")
-    dbDisconnect(con); on.exit()
+    dbDisconnect(con)
     if (nrow(rows) == 0) next
     for (j in seq_len(nrow(rows))) {
       row <- rows[j, ]
@@ -386,7 +393,10 @@ for (i in seq_len(nrow(source_files))) {
                       row$min, row$likely, row$max, row$justification))
       n_pa <- n_pa + 1L
     }
-  }, error = function(e) warn_skip(paste("Cannot read pathwayAnswers from", src, ":", e$message)))
+  }, error = function(e) {
+    try(dbDisconnect(con), silent = TRUE)
+    warn_skip(paste("Cannot read pathwayAnswers from", src, ":", e$message))
+  })
 }
 cat(sprintf("  pathwayAnswers: %d rows merged\n\n", n_pa))
 
@@ -405,9 +415,8 @@ for (i in seq_len(nrow(source_files))) {
   src <- source_files$source_db[i]
   tryCatch({
     con <- dbConnect(SQLite(), source_files$path[i])
-    on.exit(dbDisconnect(con), add = TRUE)
     rows <- dbReadTable(con, "simulations")
-    dbDisconnect(con); on.exit()
+    dbDisconnect(con)
     if (nrow(rows) == 0) next
     for (j in seq_len(nrow(rows))) {
       row <- rows[j, ]
@@ -426,7 +435,10 @@ for (i in seq_len(nrow(source_files))) {
         source_db = src, old_idSimulation = row$idSimulation,
         new_idSimulation = new_id, stringsAsFactors = FALSE))
     }
-  }, error = function(e) warn_skip(paste("Cannot read simulations from", src, ":", e$message)))
+  }, error = function(e) {
+    try(dbDisconnect(con), silent = TRUE)
+    warn_skip(paste("Cannot read simulations from", src, ":", e$message))
+  })
 }
 cat(sprintf("  Simulations: %d rows merged\n\n", nrow(simulation_id_map)))
 
@@ -439,9 +451,8 @@ for (i in seq_len(nrow(source_files))) {
   src <- source_files$source_db[i]
   tryCatch({
     con <- dbConnect(SQLite(), source_files$path[i])
-    on.exit(dbDisconnect(con), add = TRUE)
     rows <- dbReadTable(con, "simulationSummaries")
-    dbDisconnect(con); on.exit()
+    dbDisconnect(con)
     if (nrow(rows) == 0) next
     for (j in seq_len(nrow(rows))) {
       row <- rows[j, ]
@@ -458,7 +469,10 @@ for (i in seq_len(nrow(source_files))) {
                       row$q75, row$q95, row$max, row$mean))
       n_ss <- n_ss + 1L
     }
-  }, error = function(e) warn_skip(paste("Cannot read simulationSummaries from", src, ":", e$message)))
+  }, error = function(e) {
+    try(dbDisconnect(con), silent = TRUE)
+    warn_skip(paste("Cannot read simulationSummaries from", src, ":", e$message))
+  })
 }
 cat(sprintf("  Simulation summaries: %d rows merged\n\n", n_ss))
 
@@ -481,6 +495,8 @@ cat(sprintf("  Pests:                %d (%d deduplicated by EPPO)\n",
             nrow(pests_to_insert), n_dedup_pests))
 cat(sprintf("  Assessments:          %d (%d skipped)\n",
             nrow(assessment_id_map), n_skipped_ass))
+cat(sprintf("  Answers:              %d\n", n_answers))
+cat(sprintf("  Threats:              %d\n", n_threats))
 cat(sprintf("  Entry pathways:       %d\n", nrow(entrypath_id_map)))
 cat(sprintf("  Pathway answers:      %d\n", n_pa))
 cat(sprintf("  Simulations:          %d\n", nrow(simulation_id_map)))
