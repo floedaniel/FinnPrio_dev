@@ -31,7 +31,7 @@ source("R/internal functions.R")  # For get_points_as_table()
 #DB_PATH <- "python/outputs/old_test_ai_enhanced_03_02_2026.db"
 #DB_PATH <- "databases/finnprio_assessments_database_2025/FinnPrio_fg9_batch_1_2025.db"
 
-DB_PATH <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/daniel_database_2026/daniel_v009_2026-04-20T11-16-00_sdm.db"
+DB_PATH <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/finnprio_2026/master_database_2026/master_database_2026.db"
 
 # Simulation Settings
 ITERATIONS <- 50000  # Number of Monte Carlo iterations (default: 50000)
@@ -244,17 +244,20 @@ run_simulation_for_assessment <- function(con, id_assessment, id_pest,
     cat("  Calculating summary statistics... ")
 
     # Calculate summary statistics
+    safe_min <- function(x) { r <- min(x, na.rm = TRUE); if (is.infinite(r)) NA_real_ else round(r, 3) }
+    safe_max <- function(x) { r <- max(x, na.rm = TRUE); if (is.infinite(r)) NA_real_ else round(r, 3) }
+
     summary_df <- results |>
       as.data.frame() |>
       reframe(across(everything(), list(
-        min = ~min(.x, na.rm = TRUE) |> round(3),
-        q5  = ~quantile(.x, 0.05, na.rm = TRUE) |> round(3),
-        q25  = ~quantile(.x, 0.25, na.rm = TRUE) |> round(3),
-        median  = ~quantile(.x, 0.50, na.rm = TRUE) |> round(3),
-        q75  = ~quantile(.x, 0.75, na.rm = TRUE) |> round(3),
-        q95  = ~quantile(.x, 0.95, na.rm = TRUE) |> round(3),
-        max = ~max(.x, na.rm = TRUE) |> round(3),
-        mean = ~mean(.x, na.rm = TRUE) |> round(3)
+        min    = ~safe_min(.x),
+        q5     = ~quantile(.x, 0.05, na.rm = TRUE) |> round(3),
+        q25    = ~quantile(.x, 0.25, na.rm = TRUE) |> round(3),
+        median = ~quantile(.x, 0.50, na.rm = TRUE) |> round(3),
+        q75    = ~quantile(.x, 0.75, na.rm = TRUE) |> round(3),
+        q95    = ~quantile(.x, 0.95, na.rm = TRUE) |> round(3),
+        max    = ~safe_max(.x),
+        mean   = ~mean(.x, na.rm = TRUE) |> round(3)
       ), .names = "{.col}_{.fn}")) |>
       pivot_longer(cols = everything(),
                    names_to = c("variable", "stat"),

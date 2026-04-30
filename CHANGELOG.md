@@ -33,6 +33,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed - April 2026
 
+#### Three simulation bugs producing warnings and corrupt summary statistics (`R/simulations.R`, `scripts/populate database scripts/8_batch_simulation.R`) — 2026-04-30
+
+##### Bug 1 — `rpert_from_tag`: invalid PERT parameters produce NaN for entire assessment (`R/simulations.R` line 7–13)
+
+- **Symptom**: `Warning: Some values of mode < min or mode > max` and `Warning: NaN in rpert` during batch simulation. Affected assessments produced NaN for every one of the 50 000 iterations, making their simulation summaries meaningless (all statistics stored as `Inf`/`-Inf` or `NaN`).
+- **Root cause**: `rpert_from_tag()` passed the raw `min_points`, `likely_points`, `max_points` values directly to `rpert()` without validating that `min ≤ mode ≤ max`. The PERT distribution requires this ordering; violating it returns NaN for every draw. The ordering can be violated in two ways:
+  1. **Sub-question summing** — IMP2 and IMP4 are each composed of three sub-questions (IMP2.1/2.2/2.3 and IMP4.1/4.2/4.3) whose point values are summed before being passed to `rpert`. If an assessor selected a higher option for `min` than for `likely` on any sub-question, the sums can produce `min_points_sum > likely_points_sum`, reversing the expected ordering.
+  2. **Direct inversion** — any question where the selected `min` option has more points than the selected `likely` option (e.g., min = "c" / 3 pts, likely = "a" / 1 pt).
+- **Fix**: Sort `min`/`max` before use (swap if `min > max`), then clamp `mode` to `[min, max]`:
+  ```r
+  if (points[1] > points[3]) points[c(1, 3)] <- points[c(3, 1)]
+  points[2] <- pmin(pmax(points[2], points[1]), points[3])
+  ```
+- **Why this fix**: The underlying data represents a legitimate assessor judgment even when min/max are inverted — the assessor intended a spread around a most-likely value. Clamping mode to the valid range preserves the intended distribution shape and prevents NaN propagation. Silently discarding the assessment (an alternative) would hide data quality issues without giving the assessor a chance to correct them.
+
+##### Bug 2 — `scorePathway` assignment: deprecated `case_when()` with scalar condition and vector RHS (`R/simulations.R` lines 105–112, 133–140)
+
+- **Symptom**: `Warning: Calling case_when() with size 1 LHS inputs and size >1 RHS inputs was deprecated in dplyr 1.2.0. This can result in subtle silent bugs and is very inefficient.`
+- **Root cause**: `g` (the pathway group, 1/2/3) is fetched with `pull(group)` — a scalar integer of length 1. The four `scorePathway` assignments used `case_when(g == 1 ~ vector_of_50000_values, ...)`. The LHS condition `g == 1` is a length-1 logical; the RHS expressions are length-`iterations` vectors. dplyr 1.2.0 deprecated this pattern because it is ambiguous and inefficient — dplyr must silently recycle the scalar condition across all RHS rows, which is not the intended semantics of `case_when` (designed for element-wise dispatch over equal-length inputs). The warning is displayed only once per session, masking how frequently it fires (it fires for every pathway in every assessment).
+- **Fix**: Replaced all four `case_when()` blocks with `if/else if` — the correct R construct for scalar dispatch:
+  ```r
+  scorePathway[, paste0("path", p), "A"] <- if (g == 1) {
+    (ENT1 * ENT2A * ENT3A * ENT4) / 81
+  } else if (g == 2) {
+    (ENT1 * ENT2A * ENT4) / 27
+  } else if (g == 3) {
+    (ENT2A * ENT4) / 9
+  } else {
+    rep(NA_real_, iterations)
+  }
+  ```
+- **Why this fix**: `if/else if` on a scalar condition is unambiguous, eliminates the deprecation warning, and is significantly faster — dplyr does not need to evaluate all three RHS expressions before selecting one; R's `if` short-circuits immediately.
+
+##### Bug 3 — Summary statistics: `min()`/`max()` return `Inf`/`-Inf` on all-NaN columns (`scripts/populate database scripts/8_batch_simulation.R` lines 249–260)
+
+- **Symptom**: `Warning in reframe(): min() returning Inf` and `max() returning -Inf` — six warnings per affected assessment. These values were written to `simulationSummaries`, meaning the stored `min` and `max` statistics for affected variables were `Inf`/`-Inf` rather than `NA`, corrupting the database.
+- **Root cause**: NaN values from Bug 1 propagate through all downstream calculations (`IMPACT = NaN`, `RISK = NaN`, etc.). When an entire column of the 50 000-row results matrix is NaN, `min(x, na.rm = TRUE)` and `max(x, na.rm = TRUE)` have no non-missing values to operate on and return `Inf`/`-Inf` with a warning. These sentinel values were then written to `simulationSummaries` as if they were real statistics.
+- **Fix**: Added `safe_min`/`safe_max` wrappers that convert `Inf`/`-Inf` to `NA_real_`:
+  ```r
+  safe_min <- function(x) { r <- min(x, na.rm = TRUE); if (is.infinite(r)) NA_real_ else round(r, 3) }
+  safe_max <- function(x) { r <- max(x, na.rm = TRUE); if (is.infinite(r)) NA_real_ else round(r, 3) }
+  ```
+- **Why this fix**: Bug 1's fix prevents all-NaN columns in normal use, but the defensive wrappers guard against any future edge case (e.g., an assessment with a pathway group value outside 1/2/3, or future data that creates other invalid PERT inputs). Storing `NA` for a statistic is correct and interpretable; storing `Inf` is a corrupt value that would cause errors in downstream analysis or app rendering.
+- **Note on existing data**: Any simulation summaries already written to a database while Bug 1 was active may contain `Inf`/`-Inf` values. Re-running `8_batch_simulation.R` with `SKIP_EXISTING <- FALSE` on the affected database will overwrite those rows with corrected values.
+
 #### Empty-string answers silently discarded → IMP4.2/IMP4.3 AI justifications not visible in app (`server.R`) — 2026-04-17
 - **Symptom**: After running `populate_finnprio_justifications.py` with `QUESTION_FILTER = ["IMP4.2", "IMP4.3"]`, the DB correctly held the new justifications (verified in DB Browser) but they did not appear in the Shiny app for the affected species (TYLCV0, TOBRFV, PEPMV0).
 - **Root cause**: The DB convention across the project is that missing min/likely/max are stored as `""` (TEXT empty string), not SQL `NULL` — see `scripts/migration scripts/1_excel_to_db_migration.R`'s `safe_str()` and the Feb 2026 "justification-only rows" fix. However, `answers_2_logical()` in `R/internal functions.R` computed `options <- unique(c(row$min, row$likely, row$max)) |> na.omit()`, which kept `""` as a valid option. This produced a row with `ques_tag_opt = "IMP4.2_"` (trailing underscore), a downstream `filter(ques_tag_opt == "IMP4.2_b")` that matched zero rows, an empty `as.logical()` result, and a broken `tagList()` that prevented the `textAreaInput(justIMP4.2, ...)` from rendering.

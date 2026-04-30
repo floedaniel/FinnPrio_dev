@@ -5,8 +5,11 @@
 #' @param lambda Shape parameter for the PERT distribution.
 #' @return A vector of simulated values from the PERT distribution.
 rpert_from_tag <- function(answers, tag, iterations = 5000, lambda = 1) {
-  points <- answers[answers$question == tag, c("min_points", "likely_points", "max_points")] |> 
+  points <- answers[answers$question == tag, c("min_points", "likely_points", "max_points")] |>
     as.numeric()
+  # Summed sub-questions (IMP2, IMP4) can invert min/max; sort then clamp mode.
+  if (points[1] > points[3]) points[c(1, 3)] <- points[c(3, 1)]
+  points[2] <- pmin(pmax(points[2], points[1]), points[3])
   res <- rpert(iterations, points[1], points[2], points[3], lambda)
   return(res)
 }
@@ -101,13 +104,16 @@ simulation <- function(answers, answers_entry, pathways,
     #   .default = NA # Default case
     # )
     
-    ## Dependant on pathways "group" and simplified 
-    scorePathway[,paste0("path",p), "A"] <- case_when(
-      g == 1 ~ ((ENT1 * ENT2A * ENT3A * ENT4) / 81),
-      g == 2 ~ ((ENT1 * ENT2A * ENT4) / 27),
-      g == 3 ~ ((ENT2A * ENT4) / 9),
-      .default = NA # Default case
-    )
+    ## Dependant on pathways "group" and simplified
+    scorePathway[, paste0("path", p), "A"] <- if (g == 1) {
+      (ENT1 * ENT2A * ENT3A * ENT4) / 81
+    } else if (g == 2) {
+      (ENT1 * ENT2A * ENT4) / 27
+    } else if (g == 3) {
+      (ENT2A * ENT4) / 9
+    } else {
+      rep(NA_real_, iterations)
+    }
 
     ENT3B <- ENT3
     ENT3B <- case_when(
@@ -129,13 +135,16 @@ simulation <- function(answers, answers_entry, pathways,
     #   .default = NA # Default case
     # )
     
-    ## Dependant on pathways "group" and simplified 
-    scorePathway[,paste0("path",p), "B"] <- case_when(
-      g == 1 ~ ((ENT1 * ENT2B * ENT3B * ENT4) / 81),
-      g == 2 ~ ((ENT1 * ENT2B * ENT4) / 27),
-      g == 3 ~ ((ENT2B * ENT4) / 9),
-      .default = NA # Default case
-    )
+    ## Dependant on pathways "group" and simplified
+    scorePathway[, paste0("path", p), "B"] <- if (g == 1) {
+      (ENT1 * ENT2B * ENT3B * ENT4) / 81
+    } else if (g == 2) {
+      (ENT1 * ENT2B * ENT4) / 27
+    } else if (g == 3) {
+      (ENT2B * ENT4) / 9
+    } else {
+      rep(NA_real_, iterations)
+    }
     
   } # end for pathways
 
