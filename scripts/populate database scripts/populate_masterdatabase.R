@@ -225,3 +225,63 @@ if (nrow(no_eppo) > 0)
   cat(sprintf("  [WARN] %d pest(s) have blank EPPO code - inserted without deduplication\n", nrow(no_eppo)))
 cat(sprintf("  Pests: %d merged (%d deduplicated by EPPO code)\n\n",
             nrow(pests_to_insert), n_dedup_pests))
+
+# =============================================================================
+# MERGE ASSESSMENTS
+# =============================================================================
+cat("=== Merging Assessments ===\n")
+
+assessment_id_map <- data.frame(
+  source_db        = character(),
+  old_idAssessment = integer(),
+  new_idAssessment = integer(),
+  stringsAsFactors = FALSE
+)
+n_skipped_ass <- 0L
+
+for (i in seq_len(nrow(source_files))) {
+  src <- source_files$source_db[i]
+  tryCatch({
+    con <- dbConnect(SQLite(), source_files$path[i])
+    on.exit(dbDisconnect(con), add = TRUE)
+    rows <- dbReadTable(con, "assessments")
+    dbDisconnect(con); on.exit()
+    if (nrow(rows) == 0) next
+
+    for (j in seq_len(nrow(rows))) {
+      ass <- rows[j, ]
+
+      new_pest <- pest_id_map %>%
+        filter(source_db == src, old_idPest == ass$idPest) %>%
+        pull(new_idPest)
+      new_assessor <- assessor_id_map %>%
+        filter(source_db == src, old_idAssessor == ass$idAssessor) %>%
+        pull(new_idAssessor)
+
+      if (length(new_pest) == 0 || length(new_assessor) == 0) {
+        warn_skip(paste("Assessment", ass$idAssessment, "from", src,
+                        "- missing pest/assessor mapping, skipping"))
+        n_skipped_ass <- n_skipped_ass + 1L
+        next
+      }
+
+      dbExecute(con_out,
+        "INSERT INTO assessments (idPest, idAssessor, startDate, endDate,
+                                  finished, valid, notes, version, hosts,
+                                  potentialEntryPathways, reference)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params = list(new_pest[1], new_assessor[1],
+                      ass$startDate, ass$endDate, ass$finished, ass$valid,
+                      ass$notes, ass$version, ass$hosts,
+                      ass$potentialEntryPathways, ass$reference))
+
+      new_id <- dbGetQuery(con_out, "SELECT last_insert_rowid() AS id")$id
+      assessment_id_map <- rbind(assessment_id_map, data.frame(
+        source_db = src, old_idAssessment = ass$idAssessment,
+        new_idAssessment = new_id, stringsAsFactors = FALSE))
+    }
+  }, error = function(e) warn_skip(paste("Cannot read assessments from", src, ":", e$message)))
+}
+
+cat(sprintf("  Assessments: %d merged (%d skipped)\n\n",
+            nrow(assessment_id_map), n_skipped_ass))
