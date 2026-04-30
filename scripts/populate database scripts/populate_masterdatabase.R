@@ -461,3 +461,28 @@ for (i in seq_len(nrow(source_files))) {
   }, error = function(e) warn_skip(paste("Cannot read simulationSummaries from", src, ":", e$message)))
 }
 cat(sprintf("  Simulation summaries: %d rows merged\n\n", n_ss))
+
+# =============================================================================
+# DONE
+# =============================================================================
+
+cat(rep("=", 72), "\n", sep = "")
+cat("MASTER DATABASE CREATED\n")
+cat(rep("=", 72), "\n", sep = "")
+cat("Output:", OUTPUT_PATH, "\n\n")
+cat("Sources:\n")
+for (i in seq_len(nrow(source_files)))
+  cat(sprintf("  %s: %s\n", source_files$source_db[i], basename(source_files$path[i])))
+
+cat(sprintf("\nSummary:\n"))
+cat(sprintf("  Assessors:            %d (%d deduplicated)\n",
+            nrow(unique_assessors), n_dedup))
+cat(sprintf("  Pests:                %d (%d deduplicated by EPPO)\n",
+            nrow(pests_to_insert), n_dedup_pests))
+cat(sprintf("  Assessments:          %d (%d skipped)\n",
+            nrow(assessment_id_map), n_skipped_ass))
+cat(sprintf("  Entry pathways:       %d\n", nrow(entrypath_id_map)))
+cat(sprintf("  Pathway answers:      %d\n", n_pa))
+cat(sprintf("  Simulations:          %d\n", nrow(simulation_id_map)))
+cat(sprintf("  Simulation summaries: %d\n", n_ss))
+cat(rep("=", 72), "\n", sep = "")
