@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - April 2026
+
+#### New populate database scripts (`scripts/populate database scripts/`)
+- `7_populate_masterdatabase.R`: Scans all `4_master` subfolders under a base directory, merges every `.db` file found into a single master database with timestamped backup; deduplicates assessors by name and pests by EPPO code
+- `8_batch_simulation.R`: Batch runs Monte Carlo simulations for all assessments in a FinnPRIO database (renamed from previous numbering)
+
+### Changed - April 2026
+
+#### IMP4 sub-questions restructured to match IMP2 pattern (`information/Instructions_FinnPRIO_assessments.Rmd`, `python/`)
+- **IMP4.1, IMP4.2, IMP4.3 now have their own `##` headings** with dedicated `### Options` and `### Guidance` sections, matching the structure used by IMP2.1, IMP2.2, IMP2.3
+- Previously nested under a single `## IMP4.` with a `### Sub-questions` section — sub-question descriptions were too thin for AI prompts (no individual guidance)
+- Each sub-question now carries its own context (what counts as social/aesthetic/cultural impact) directly in the guidance
+- Updated `parse_rmd_instructions.py` validation list: `IMP4` → `IMP4.1`
+- Updated `instructions_loader.py` host-related check: exact list match → prefix match so `IMP4.1`/`IMP4.2`/`IMP4.3` receive host plant context in AI prompts
+
+#### QUESTION_FILTER now accepts multiple codes (`python/populate_finnprio_justifications.py`)
+- Changed from single string (`"EST2"`) to list (`["EST2", "IMP4.1", "IMP4.2"]`)
+- CLI `--question` flag now accepts multiple space-separated codes (e.g., `--question EST2 IMP4.1 IMP4.2`)
+- Empty list `[]` processes all questions (same as previous `None` behavior)
+
+#### QUESTION_FILTER set to `[]` for full-pipeline runs (`python/populate_finnprio_justifications.py`) — 2026-04-17
+- Changed default from `["IMP4.2", "IMP4.3"]` (IMP4 trial) to `[]` (all questions).
+- The IMP2.x / IMP4.x sub-question pipeline is now validated end-to-end (Rmd → JSON → prompt construction → DB write), so subsequent runs can populate every question in one pass rather than targeting a single group at a time.
+
+### Fixed - April 2026
+
+#### Empty-string answers silently discarded → IMP4.2/IMP4.3 AI justifications not visible in app (`server.R`) — 2026-04-17
+- **Symptom**: After running `populate_finnprio_justifications.py` with `QUESTION_FILTER = ["IMP4.2", "IMP4.3"]`, the DB correctly held the new justifications (verified in DB Browser) but they did not appear in the Shiny app for the affected species (TYLCV0, TOBRFV, PEPMV0).
+- **Root cause**: The DB convention across the project is that missing min/likely/max are stored as `""` (TEXT empty string), not SQL `NULL` — see `scripts/migration scripts/1_excel_to_db_migration.R`'s `safe_str()` and the Feb 2026 "justification-only rows" fix. However, `answers_2_logical()` in `R/internal functions.R` computed `options <- unique(c(row$min, row$likely, row$max)) |> na.omit()`, which kept `""` as a valid option. This produced a row with `ques_tag_opt = "IMP4.2_"` (trailing underscore), a downstream `filter(ques_tag_opt == "IMP4.2_b")` that matched zero rows, an empty `as.logical()` result, and a broken `tagList()` that prevented the `textAreaInput(justIMP4.2, ...)` from rendering.
+- **Fix — Fix B (normalize at the DB-read boundary)**: Apply `|> mutate(across(c(min, likely, max), ~ if_else(.x == "", NA_character_, .x)))` immediately after every `dbGetQuery()` that loads the `answers` / `pathwayAnswers` tables in `server.R` (4 call sites: lines ~443, ~444, ~1562, ~1625). `answers_2_logical()` now receives proper `NA` and `na.omit()` strips them as intended.
+- **Why normalize at read-time (not inside `answers_2_logical`)**: The DB's `""` sentinel is load-bearing (used by the save path, export, migration scripts). Fixing the single reader keeps every downstream consumer honest and protects against future readers with the same bug.
+- **Verification (read-only, `mogens_v004_2026-04-17T09-03-11.db`)**:
+  | Assessment | Code | After mutate | justification_len |
+  |---|---|---|---|
+  | TYLCV0 | IMP4.2 | min=NA, likely=NA, max=NA | 17,170 |
+  | TYLCV0 | IMP4.3 | min=NA, likely=NA, max=NA | 13,944 |
+  | TOBRFV | IMP4.2 | min=NA, likely=NA, max=NA | 14,781 |
+  | TOBRFV | IMP4.3 | min='c', likely='c', max='c' | 15,871 |
+  | PEPMV0 | IMP4.2 | min=NA, likely=NA, max=NA | 16,183 |
+  | PEPMV0 | IMP4.3 | min='c', likely='c', max='c' | 14,859 |
+
+#### Parser validation list + dead `IMP2`/`IMP4` bare-code branches (`python/parse_rmd_instructions.py`) — 2026-04-17
+- **Context**: After the April 2026 restructure, `IMP2.1/.2/.3` and `IMP4.1/.2/.3` became top-level `##` entries; bare `IMP2` / `IMP4` headings no longer exist in the Rmd. Several code paths still checked for them.
+- **Changes**:
+  - `_validate()` `required_codes`: replaced `'IMP2'`, `'IMP4'` with the six actual sub-codes (`'IMP2.1'`, `'IMP2.2'`, `'IMP2.3'`, `'IMP4.1'`, `'IMP4.2'`, `'IMP4.3'`) so missing sub-questions are now flagged.
+  - `_parse_question()` sub-questions branch (`if code in ['IMP2', 'IMP4']: question['sub_questions'] = ...`): removed (dead).
+  - `_determine_type()` and `_extract_options()`: dropped the `code in ['IMP2', 'IMP4']` check; kept the `startswith('IMP2.') / startswith('IMP4.')` checks that actually fire.
+  - `_validate()` boolean-options check: replaced `boolean_codes = {'IMP2', 'IMP4'}` set with an inline `startswith` check.
+- Each removal carries an inline comment: `# IMP2/IMP4 restructured 2026-04-17: IMP2.1/.2/.3 and IMP4.1/.2/.3 are top-level entries (not sub-questions under a parent IMP2/IMP4 heading)`.
+
+#### Sub-question rows carried old parent text after IMP2/IMP4 restructure (DB `questions` table) — 2026-04-17
+- **Symptom**: In the Shiny app, IMP2.1 / IMP2.2 / IMP2.3 all rendered with the identical generic label "Would the pest cause the following indirect economic impacts in the PRA area?" (and IMP4.1 / IMP4.2 / IMP4.3 all showed the generic environmental/social label). Same-text appearance raised a concern that the AI populator was researching the wrong question.
+- **Root cause**: The IMP2 / IMP4 restructure renamed the old parent rows (`idQuestion=7` `number='2'` → `'2.1'`; `idQuestion=9` `number='4'` → `'4.1'`) and inserted new sibling rows (`idQuestion=15,16,17,18`) for the remaining sub-questions. The `questions.question` column was not updated, so every sub-question row inherited the parent-level text. The Rmd and its generated JSON cache held the correct sub-question text all along.
+- **Impact on the Python populator**: Not blocking. `create_research_query()` in `populate_finnprio_justifications.py` calls `build_justification_prompt(code, …)` which reads text from the JSON cache, not the DB — so AI prompts used the correct sub-question text. The DB's stale text only affected the Shiny UI label and any path that fell back on `answer['text']` (currently only console logging).
+- **Fix**: New replayable migration script `scripts/migration scripts/4_sync_subquestion_text.py` (slot 3 was already used). Generic over any dotted sub-question code in `python/instructions_cache/finnprio_instructions.json`; updates `questions.question` for every dotted code where DB text ≠ JSON text. `argparse` CLI with `--dry-run` and `-v/--verbose` flags; uses `logging` (not `print`); idempotent (re-running produces `updated=0, already-in-sync=N`).
+- **Applied to**: `databases/mogens_database_2026/mogens_v006_2026-04-17T10-45-45.db` — 6 rows updated (IMP2.1, IMP2.2, IMP2.3, IMP4.1, IMP4.2, IMP4.3). Re-run this script against every database that went through the IMP2/IMP4 restructure.
+
+#### Surfaced previously-silent skips in justification populator (`python/populate_finnprio_justifications.py`) — 2026-04-17
+- `get_all_assessment_ids()` now runs a second query to identify EPPO codes in `EPPOCODES_TO_POPULATE` that have no matching pest/assessment rows, and emits `logging.warning("EPPO codes not found in pests/assessments (skipped): %s", ...)`. Previously these were silently dropped (e.g. `TOLCND` in the mogens database has no matching pest record).
+- Added a TODO comment in `get_assessment_info()` near the `code = f"{grp}{num}.{subgrp}" if subgrp else f"{grp}{num}."` line documenting that this trailing-dot convention diverges from `populate_finnprio_values.py` (`f"{group}{number}"`, no trailing dot). Both scripts currently interoperate only because `instructions_loader.py` strips trailing dots via `rstrip('.')`; the two should be unified on one form in a follow-up.
+
+#### Crash when opening assessments with empty min/likely/max values (`R/internal functions.R`)
+- **"ERROR [object Object]" / `ques_tag_opt` not found** when selecting species whose answers had justifications but no min/likely/max values (e.g. AI-populated assessments before value assignment)
+- Root cause: `answers_2_logical()` initialized `result <- data.frame()` (zero columns), and when all answer values were NULL/NA, the loop never added rows — returning a column-less dataframe instead of `NULL`
+- `render_quest_tab()` checked `!is.null(answers)` (TRUE for empty dataframe) then crashed on `filter(ques_tag_opt == ...)` since the column didn't exist
+- Fix: added `if (nrow(result) == 0) result <- NULL` after the loop in both `answers_2_logical` and `answers_path_2_logical`
+
 ### Changed - March 2026
 
 #### SDM Populator (`scripts/populate database scripts/6_sdm_populator.R`)

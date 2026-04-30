@@ -309,12 +309,15 @@ Scripts for data migration and database repairs:
 
 ### Populate Database Scripts (`scripts/populate database scripts/`)
 
-Scripts for bulk data population with EPPO data:
+Scripts for bulk data population with EPPO data and master database management:
 - `1_populate_eppo_pests_table_db.R`: Bulk pest data import (sets default values for required fields)
 - `2_populate_eppo_assesment_host.R`: Assessment-host relationship setup
 - `3_populate_eppo_notes_datasheet.R`: Notes field population
 - `4_populate_eppo_pathwayshosts.R`: Pathway-host relationships
 - `5_populate_eppo_distribution.R`: Geographic distribution data
+- `6_sdm_populator.R`: Populates EST1 justification with Maxent SDM model results for Norway/Sweden (reads `model_summary.json` from SDMtune folders)
+- `7_populate_masterdatabase.R`: Merges all assessor `4_master` databases under a base directory into a single master database; backs up existing master with timestamp before overwriting; deduplicates assessors by name and pests by EPPO code
+- `8_batch_simulation.R`: Batch runs Monte Carlo simulations for all assessments in a FinnPRIO database
 
 ### Support Scripts (`scripts/div support scripts/`)
 
@@ -360,6 +363,15 @@ The instructions system loads question-specific guidance from `information/Instr
 **Configuration:** API keys read from external files at `C:\Users\dafl\Desktop\API keys\`
 
 See `python/README.md` for detailed documentation and `python/CHANGELOG.md` for version history.
+
+**`gpt_researcher` API gotchas** (relevant to `Populate_finprio_justifications_deep.py`):
+- `Tone` enum: `from gpt_researcher.utils.enum import Tone`
+- `report_source` takes a string literal: `"web"` / `"local"` / `"hybrid"`
+- `conduct_research(on_progress=cb)`: callback is called **synchronously** — must be `def`, not `async def`
+- `ResearchProgress` attrs: `current_depth`, `total_depth`, `current_breadth`, `total_breadth`, `current_query`, `completed_queries`, `total_queries`
+- Deep research requires `report_type="deep"` + reasoning `STRATEGIC_LLM` (e.g. `openai:o4-mini`); tune via `DEEP_RESEARCH_BREADTH/DEPTH/CONCURRENCY` + `TOTAL_WORDS`
+- `FAST_/SMART_/STRATEGIC_TOKEN_LIMIT` are per-role output caps (not a shared budget); `LLM_MAX_TOKENS` is NOT a recognized env var
+- No native domain-exclusion API; exclusions rely on prompt text + post-hoc regex scrubbing
 
 ## Recent Updates
 
