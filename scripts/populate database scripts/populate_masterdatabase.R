@@ -389,3 +389,75 @@ for (i in seq_len(nrow(source_files))) {
   }, error = function(e) warn_skip(paste("Cannot read pathwayAnswers from", src, ":", e$message)))
 }
 cat(sprintf("  pathwayAnswers: %d rows merged\n\n", n_pa))
+
+# =============================================================================
+# MERGE SIMULATIONS
+# =============================================================================
+cat("=== Merging Simulations ===\n")
+simulation_id_map <- data.frame(
+  source_db        = character(),
+  old_idSimulation = integer(),
+  new_idSimulation = integer(),
+  stringsAsFactors = FALSE
+)
+
+for (i in seq_len(nrow(source_files))) {
+  src <- source_files$source_db[i]
+  tryCatch({
+    con <- dbConnect(SQLite(), source_files$path[i])
+    on.exit(dbDisconnect(con), add = TRUE)
+    rows <- dbReadTable(con, "simulations")
+    dbDisconnect(con); on.exit()
+    if (nrow(rows) == 0) next
+    for (j in seq_len(nrow(rows))) {
+      row <- rows[j, ]
+      new_ass <- assessment_id_map %>%
+        filter(source_db == src, old_idAssessment == row$idAssessment) %>%
+        pull(new_idAssessment)
+      if (length(new_ass) == 0) next
+      dbExecute(con_out,
+        "INSERT INTO simulations (idAssessment, iterations, lambda,
+                                  weight1, weight2, date)
+         VALUES (?, ?, ?, ?, ?, ?)",
+        params = list(new_ass[1], row$iterations, row$lambda,
+                      row$weight1, row$weight2, row$date))
+      new_id <- dbGetQuery(con_out, "SELECT last_insert_rowid() AS id")$id
+      simulation_id_map <- rbind(simulation_id_map, data.frame(
+        source_db = src, old_idSimulation = row$idSimulation,
+        new_idSimulation = new_id, stringsAsFactors = FALSE))
+    }
+  }, error = function(e) warn_skip(paste("Cannot read simulations from", src, ":", e$message)))
+}
+cat(sprintf("  Simulations: %d rows merged\n\n", nrow(simulation_id_map)))
+
+# =============================================================================
+# MERGE SIMULATION SUMMARIES
+# =============================================================================
+cat("=== Merging Simulation Summaries ===\n")
+n_ss <- 0L
+for (i in seq_len(nrow(source_files))) {
+  src <- source_files$source_db[i]
+  tryCatch({
+    con <- dbConnect(SQLite(), source_files$path[i])
+    on.exit(dbDisconnect(con), add = TRUE)
+    rows <- dbReadTable(con, "simulationSummaries")
+    dbDisconnect(con); on.exit()
+    if (nrow(rows) == 0) next
+    for (j in seq_len(nrow(rows))) {
+      row <- rows[j, ]
+      new_sim <- simulation_id_map %>%
+        filter(source_db == src, old_idSimulation == row$idSimulation) %>%
+        pull(new_idSimulation)
+      if (length(new_sim) == 0) next
+      dbExecute(con_out,
+        "INSERT INTO simulationSummaries
+           (idSimulation, variable, min, q5, q25, median, q75, q95, max, mean)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params = list(new_sim[1], row$variable,
+                      row$min, row$q5, row$q25, row$median,
+                      row$q75, row$q95, row$max, row$mean))
+      n_ss <- n_ss + 1L
+    }
+  }, error = function(e) warn_skip(paste("Cannot read simulationSummaries from", src, ":", e$message)))
+}
+cat(sprintf("  Simulation summaries: %d rows merged\n\n", n_ss))
