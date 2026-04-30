@@ -163,3 +163,65 @@ assessor_id_map <- all_assessors_df %>%
 
 n_dedup <- nrow(all_assessors_df) - nrow(unique_assessors)
 cat(sprintf("  Assessors: %d merged (%d deduplicated)\n\n", nrow(unique_assessors), n_dedup))
+
+# =============================================================================
+# MERGE PESTS (deduplicate by eppoCode; blank EPPO inserted without dedup)
+# =============================================================================
+cat("=== Merging Pests ===\n")
+
+all_pests <- list()
+for (i in seq_len(nrow(source_files))) {
+  tryCatch({
+    con <- dbConnect(SQLite(), source_files$path[i])
+    on.exit(dbDisconnect(con), add = TRUE)
+    rows <- dbReadTable(con, "pests")
+    dbDisconnect(con); on.exit()
+    if (nrow(rows) == 0) next
+    rows$source_db <- source_files$source_db[i]
+    all_pests[[i]] <- rows
+  }, error = function(e) warn_skip(paste("Cannot read pests from", source_files$source_db[i], ":", e$message)))
+}
+
+all_pests_df <- bind_rows(all_pests)
+
+# Separate pests with valid EPPO code from those without
+has_eppo  <- !is.na(all_pests_df$eppoCode) & trimws(all_pests_df$eppoCode) != ""
+with_eppo <- all_pests_df[has_eppo, ]
+no_eppo   <- all_pests_df[!has_eppo, ]
+
+# Deduplicate: keep first occurrence per EPPO code
+deduped_pests <- with_eppo[!duplicated(trimws(with_eppo$eppoCode)), ]
+
+# All rows to insert = deduped + non-deduplicatable
+pests_to_insert <- bind_rows(deduped_pests, no_eppo)
+
+for (i in seq_len(nrow(pests_to_insert))) {
+  p <- pests_to_insert[i, ]
+  dbExecute(con_out,
+    "INSERT INTO pests (scientificName, eppoCode, synonyms, vernacularName,
+                        idTaxa, idQuarantineStatus, inEurope, gbifTaxonKey)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    params = list(p$scientificName, p$eppoCode, p$synonyms, p$vernacularName,
+                  p$idTaxa, p$idQuarantineStatus, p$inEurope, p$gbifTaxonKey))
+  new_id <- dbGetQuery(con_out, "SELECT last_insert_rowid() AS id")$id
+  pests_to_insert$new_idPest[i] <- new_id
+}
+
+# Build full mapping: every source pest row -> new_idPest
+eppo_to_new <- pests_to_insert %>%
+  filter(!is.na(eppoCode) & trimws(eppoCode) != "") %>%
+  select(eppoCode, new_idPest)
+
+pest_id_map <- all_pests_df %>%
+  mutate(eppo_trimmed = trimws(eppoCode)) %>%
+  left_join(eppo_to_new, by = c("eppo_trimmed" = "eppoCode")) %>%
+  mutate(new_idPest = coalesce(new_idPest,
+    pests_to_insert$new_idPest[match(paste(source_db, idPest),
+                                     paste(pests_to_insert$source_db, pests_to_insert$idPest))])) %>%
+  select(source_db, old_idPest = idPest, new_idPest)
+
+n_dedup_pests <- nrow(with_eppo) - nrow(deduped_pests)
+if (nrow(no_eppo) > 0)
+  cat(sprintf("  [WARN] %d pest(s) have blank EPPO code - inserted without deduplication\n", nrow(no_eppo)))
+cat(sprintf("  Pests: %d merged (%d deduplicated by EPPO code)\n\n",
+            nrow(pests_to_insert), n_dedup_pests))
