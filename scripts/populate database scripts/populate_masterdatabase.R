@@ -108,3 +108,58 @@ for (tbl in c("simulationSummaries", "simulations", "pathwayAnswers",
 }
 dbExecute(con_out, "UPDATE dbStatus SET inUse = 0, timeStamp = CURRENT_TIMESTAMP")
 cat("Schema ready.\n\n")
+
+# =============================================================================
+# MERGE ASSESSORS (deduplicate by firstName + lastName)
+# =============================================================================
+cat("=== Merging Assessors ===\n")
+
+all_assessors <- list()
+for (i in seq_len(nrow(source_files))) {
+  tryCatch({
+    con <- dbConnect(SQLite(), source_files$path[i])
+    on.exit(dbDisconnect(con), add = TRUE)
+    rows <- dbReadTable(con, "assessors")
+    dbDisconnect(con); on.exit()
+    if (nrow(rows) == 0) next
+    rows$source_db <- source_files$source_db[i]
+    all_assessors[[i]] <- rows
+  }, error = function(e) warn_skip(paste("Cannot read assessors from", source_files$source_db[i], ":", e$message)))
+}
+
+all_assessors_df <- bind_rows(all_assessors)
+
+# Detect schema: old (assessorName) vs new (firstName + lastName)
+has_split <- all(c("firstName", "lastName") %in% names(all_assessors_df))
+
+if (has_split) {
+  dedup_key <- paste(all_assessors_df$firstName, all_assessors_df$lastName)
+} else {
+  dedup_key <- all_assessors_df$assessorName
+}
+
+all_assessors_df$dedup_key <- dedup_key
+unique_assessors <- all_assessors_df[!duplicated(dedup_key), ]
+
+for (i in seq_len(nrow(unique_assessors))) {
+  row <- unique_assessors[i, ]
+  if (has_split) {
+    dbExecute(con_out,
+      "INSERT INTO assessors (firstName, lastName, email) VALUES (?, ?, ?)",
+      params = list(row$firstName, row$lastName, row$email))
+  } else {
+    dbExecute(con_out,
+      "INSERT INTO assessors (assessorName, email) VALUES (?, ?)",
+      params = list(row$assessorName, row$email))
+  }
+  new_id <- dbGetQuery(con_out, "SELECT last_insert_rowid() AS id")$id
+  unique_assessors$new_idAssessor[i] <- new_id
+}
+
+# Build full mapping (all source rows -> new ID via dedup key)
+assessor_id_map <- all_assessors_df %>%
+  left_join(unique_assessors %>% select(dedup_key, new_idAssessor), by = "dedup_key") %>%
+  select(source_db, old_idAssessor = idAssessor, new_idAssessor)
+
+n_dedup <- nrow(all_assessors_df) - nrow(unique_assessors)
+cat(sprintf("  Assessors: %d merged (%d deduplicated)\n\n", nrow(unique_assessors), n_dedup))
