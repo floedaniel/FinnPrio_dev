@@ -72,6 +72,10 @@ The application expects a SQLite database file to be selected on startup via the
 
 **No automated tests** — UI and reactive changes are verified manually via `shiny::runApp()` against a populated SQLite DB; there is no `testthat` suite. Bake manual verification into any plan that touches the Shiny app.
 
+**Branching convention:** feature branches use `feat/<slug>`, bug fixes use `fix/<slug>` (see `feat/eppo-gd-retriever`, `fix/pathway-tab-save-bug`). Branch off the current integration branch, not necessarily `master`, if the latter has unrelated uncommitted work in the tree.
+
+**Commit style:** Conventional Commits with scope — `fix(shiny):`, `fix(python):`, `feat(python):`, `docs(claude):`, `chore(python):`, `refactor(python):`. Scope = language/area, not file. Multi-line bodies via `git commit -m "$(cat <<'EOF' ... EOF)"`.
+
 ## Code Architecture
 
 ### Application Structure
@@ -80,7 +84,7 @@ The app follows the standard Shiny architecture pattern:
 
 - **global.R**: Package loading and initialization (optimized with automatic dependency management)
 - **ui.R**: User interface definition (navbar with tabs for Assessments, Pest-species data, Assessors, Instructions)
-- **server.R**: Server-side logic and reactive programming (~2100+ lines)
+- **server.R**: Server-side logic and reactive programming (~2500+ lines)
   - Includes full CRUD operations for Pests and Assessors
   - Automatic stale session unlock (5-minute timeout)
 - **R/**: Helper functions organized by purpose
@@ -377,13 +381,4 @@ See `python/README.md` for detailed documentation and `python/CHANGELOG.md` for 
 
 ## Recent Updates
 
-For detailed changelog of all updates, features, bug fixes, and improvements, see **CHANGELOG.md**.
-
-**Latest major updates:**
-- **May 2026**: Pathway tab save bug fixed — `Save Answers` no longer jumps the pathway tabset to the first tab, and answers for off-screen pathway tabs are no longer silently dropped. Six commits on `fix/pathway-tab-save-bug` (`3f54591..55464a5`): added `id = "pathway_tabset"` and `tabPanel(value = x)` (so the active tab is reachable via `input$pathway_tabset` and `updateTabsetPanel`); switched seed reads of `answers$main` and `answers$entry` inside `output$questionarie` / `output$questionariePath` to `isolate()` snapshots (Mastering Shiny Ch. 10 pattern); dropped redundant `assessments$selected` slot mutations from `save_answers` / `save_general`; restructured `save_general`'s pathway add/remove so DELETEs precede the re-query and `answers$entry` refreshes in lockstep with `assessments$entry`; `ass_finish` and `ass_valid` capture/restore the active pathway tab around their unavoidable slot mutations (incl. the `shinyalert` conflict callback). `server.R` only, +135 / -61 lines. Spec: `docs/superpowers/specs/2026-05-28-pathway-save-bug-design.md`; plan: `docs/superpowers/plans/2026-05-28-pathway-save-bug.md`.
-- **May 2026**: Master DB pipeline hardened — `databases/master database/` renamed to `databases/master_database/` (underscore), output renamed to `master_finnprio.db`, backups routed to `backups/` subfolder; FinnPRIO Explorer defaults updated — all filter checkboxes pre-ticked, default colour = taxonomic group, risk rank plot height dynamic; Explorer `global.R` switched to relative DB path; deployment script uses explicit `appFiles`
-- **February 2026**: Instructions System v2.0 - Restructured Rmd file with `### Options` and `### Guidance` sections, explicit km²/ha/kg thresholds, updated parser and loader for cleaner AI prompts
-- **February 2026**: Python folder cleanup - renamed scripts (`populate_finnprio_justifications.py`, `populate_finnprio_justifications_mcp.py`), removed 22 unnecessary files, added MCP server version with caching
-- **February 2026**: Complete UI/UX overhaul with CSS rebuild (v36.0 → v37.3), color-coded sections, enhanced typography, prominent justification boxes, and 8-color pathway tabs
-- **February 2026**: Project restructuring with organized folder structure and cross-platform compatibility
-- **January 2026**: Full CRUD operations for Pests and Assessors, data validation, database locking improvements, and code quality enhancements
+See **CHANGELOG.md** for the full release log (Added / Changed / Fixed by month). The most recent fix branches and commit SHAs are referenced from inside the relevant CHANGELOG entries.
