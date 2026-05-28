@@ -68,6 +68,10 @@ shiny::runApp()
 
 The application expects a SQLite database file to be selected on startup via the file chooser dialog.
 
+**Syntax-checking R code:** `Rscript -e "parse('server.R'); cat('OK\n')"` — parses a file without executing; use after edits to `server.R` / `ui.R` / `R/*.R` before launching `shiny::runApp()`.
+
+**No automated tests** — UI and reactive changes are verified manually via `shiny::runApp()` against a populated SQLite DB; there is no `testthat` suite. Bake manual verification into any plan that touches the Shiny app.
+
 ## Code Architecture
 
 ### Application Structure
@@ -208,6 +212,11 @@ Default simulation parameters: 50,000 iterations, lambda=1, weights=0.5/0.5
 
 ## Important Development Notes
 
+### Shiny reactive gotchas
+
+- **`reactiveValues` invalidates by object, not by slot**: writing to any field of a `reactiveValues` (e.g. `assessments$selected$endDate <- ...`) invalidates every reactive context that reads any field of that same `reactiveValues`. Inside `renderUI`, read save-driven reactives via `isolate()` snapshots for seed-only reads to avoid save-triggered re-renders (Mastering Shiny Ch. 10 `value <- isolate(input$dynamic)` pattern; see fix commits `3f54591..55464a5`).
+- **`tabPanel(value = x, ...)`, NOT `tabPanel(id = x, ...)`**: `tabPanel` silently ignores `id`. The active tab is identified by `value` and exposed via `input$<tabset_id>` only when the outer `tabsetPanel(id = ...)` declares an id. Required for `updateTabsetPanel()` to address tabs.
+
 ### Database Transactions
 
 Always wrap multi-step database operations in transaction logic (though not explicitly implemented in current code). When modifying entry pathways via `save_general`, the cascade deletion of pathwayAnswers is automatic due to schema constraints.
@@ -246,6 +255,8 @@ Answers store option identifiers (e.g., "a", "b", "c") not point values. Points 
 - **information/**: Documentation (README files, database diagrams)
 - **scripts/**: Utility scripts organized by function (see Script Files section below)
 - **python/**: AI enhancement scripts for generating justifications and values
+
+**Gitignored docs:** `docs/` is in `.gitignore` (originally for pkgdown sites). Design specs and implementation plans under `docs/superpowers/{specs,plans}/` are untracked by project convention — they live on disk but are not in git. Reference them by path in commit messages/PRs; do not try to commit them without a `git add -f` or a `.gitignore` exemption.
 
 **Database Selection**:
 - Selected at runtime via shinyFiles dialog
