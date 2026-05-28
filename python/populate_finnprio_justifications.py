@@ -21,6 +21,11 @@ import shutil
 from pathlib import Path
 from gpt_researcher import GPTResearcher
 from gpt_researcher.utils.enum import Tone
+
+# Register the EPPO Global Database retriever with gpt-researcher's factory.
+# Must run before any GPTResearcher() instance is created.
+from eppo_gd_retriever import register as _register_eppo_gd
+_register_eppo_gd()
 from datetime import datetime
 from typing import Dict, List, Tuple
 import re
@@ -108,7 +113,7 @@ os.environ.update({
 
     # Retrievers — scientific sources first, Tavily as broad fallback
     # (names verified in gpt_researcher/actions/retriever.py)
-    "RETRIEVER": "tavily, semantic_scholar,pubmed_central",
+    "RETRIEVER": "tavily, semantic_scholar,pubmed_central,eppo_gd",
     "SCRAPER": "bs",
 
     # Research depth
@@ -1107,6 +1112,9 @@ async def process_assessment(db_path: str, assessment_id: int = None,
     pest_name = assessment_info['scientificName']
     eppo_code = assessment_info['eppoCode']
     answers = assessment_info['answers']
+
+    # Expose EPPO code to the EPPOGDSearch retriever for this assessment.
+    os.environ["EPPO_CODE"] = eppo_code or ""
     assessment_id = assessment_info['idAssessment']
     hosts = assessment_info.get('hosts', '')
 
@@ -1353,21 +1361,24 @@ async def main(source_db: str = DEFAULT_DB_PATH,
         print("ℹ️  Will process pathway questions for each selected pathway")
 
     # Process each assessment
-    for idx, aid in enumerate(assessment_ids, 1):
-        if len(assessment_ids) > 1:
-            print("\n" + "=" * 80)
-            print(f"ASSESSMENT {idx}/{len(assessment_ids)} (ID: {aid})")
-            print("=" * 80)
+    try:
+        for idx, aid in enumerate(assessment_ids, 1):
+            if len(assessment_ids) > 1:
+                print("\n" + "=" * 80)
+                print(f"ASSESSMENT {idx}/{len(assessment_ids)} (ID: {aid})")
+                print("=" * 80)
 
-        await process_assessment(
-            db_path=working_db,
-            assessment_id=aid,
-            exclude_domains=exclude_domains,
-            limit_questions=limit_questions,
-            process_pathways=process_pathways,
-            skip_existing=skip_existing,
-            question_filter=effective_question_filter
-        )
+            await process_assessment(
+                db_path=working_db,
+                assessment_id=aid,
+                exclude_domains=exclude_domains,
+                limit_questions=limit_questions,
+                process_pathways=process_pathways,
+                skip_existing=skip_existing,
+                question_filter=effective_question_filter
+            )
+    finally:
+        os.environ.pop("EPPO_CODE", None)
 
     print("\n" + "=" * 80)
     print("✅ COMPLETED")
