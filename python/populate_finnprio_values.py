@@ -32,7 +32,7 @@ from instructions_loader import build_value_selection_prompt, get_question_instr
 
 # Skip Existing Values
 # Set to False to overwrite existing values, True to skip answers that already have values
-SKIP_EXISTING_VALUES = True
+SKIP_EXISTING_VALUES = False
 
 # API Keys - Read from files
 OPENAI_API_KEY_FILE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\API keys\tore_vkm_openai.txt"
@@ -257,7 +257,7 @@ class ValuePopulator:
 
         try:
             response = await client.chat.completions.create(
-                model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+                model=os.getenv("LLM_MODEL", "gpt-4.1"),
                 messages=[
                     {"role": "system", "content": "You are an expert in plant pest risk assessment."},
                     {"role": "user", "content": prompt}

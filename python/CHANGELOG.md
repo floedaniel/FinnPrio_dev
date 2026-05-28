@@ -4,6 +4,33 @@ All notable changes to the Python AI enhancement scripts.
 
 ---
 
+## [2026-05-28] - EPPO Global Database GPT Researcher Retriever
+
+### Added
+- **`eppo_gd_retriever.py`** — New GPT Researcher retriever (`EPPOGDSearch`) that scrapes the EPPO Global Database for the species identified by `os.environ["EPPO_CODE"]`. Exposes:
+  - `EPPOGDSearch` class — sync `def search(self, max_results)`, matching the existing retriever interface used by `gpt_researcher.skills.researcher`. Returns dicts shaped `{"url", "raw_content", "title"}`.
+  - `_fetch_reporting_index(code)` — fetches `gd.eppo.int/taxon/{CODE}/reporting`, parses the HTML table for `/reporting/article-{id}` anchors, sorts by year-month (`YYYY-MM` strings, lexicographic descending = chronological descending), caps at `MAX_REPORTING_ARTICLES = 20`.
+  - `_fetch_article_body(url)` — fetches each article page, extracts text from the first `<h2>` onward inside the primary content container, with `<main>` / `<body>` / whole-document fallbacks.
+  - `_fetch_pra_links(code)` — fetches `gd.eppo.int/taxon/{CODE}/eppolinks`, locates the "EPPO PRA Platform" section (which is a `<div class="process-meta"><span>` on the real page, not a heading — uses `soup.find_all(True)` + ancestor walk to find the section root), extracts `pra.eppo.int/pra/{uuid}` anchors. Returns synthetic body `f"EPPO PRA Platform document: {title}\nURL: {pra_url}"` — the PRA landing pages are JavaScript-rendered SPAs with no SSR content, so fetching them yields only a "JavaScript required" placeholder.
+  - Module-level `_CACHE` dict keyed by uppercase EPPO code, populated on first `search()` for a code, hit on subsequent calls within the same process (verified: first call ~12 s, second call ~0 ms for XYLEFA).
+  - `register()` — idempotent (`_REGISTERED` flag) monkey-patch of `gpt_researcher.actions.retriever.get_retriever` that handles `name == "eppo_gd"` and delegates everything else to the original function. Captures the original via closure at patch time so re-registration is safe.
+  - All HTTP errors and BeautifulSoup parse errors soft-fail to `[]` with a `WARNING` log — never propagate.
+- **`populate_finnprio_justifications.py`** integration (four small edits):
+  - `from eppo_gd_retriever import register as _register_eppo_gd; _register_eppo_gd()` after the `gpt_researcher` imports — patches the factory before any `GPTResearcher()` instance is created.
+  - Default `RETRIEVER` env extended to `"tavily, semantic_scholar,pubmed_central,eppo_gd"`.
+  - `os.environ["EPPO_CODE"] = eppo_code or ""` set inside `process_assessment()` right after `assessment_info` is loaded; also popped in the early-return guard so a stale code from the previous assessment never leaks into a later processing step.
+  - `try: … finally: os.environ.pop("EPPO_CODE", None)` wrapping the assessment loop in `main()`.
+
+### Changed
+- **`STRATEGIC_LLM` upgraded** from `openai:o4-mini` to `openai:o3` for production (in `populate_finnprio_justifications.py` env config). Affects agent/query planning for `report_type="research_report"`.
+
+### Design notes
+- `gpt-researcher` 0.14.6 is pip-installed under `python/.venv/Lib/site-packages/gpt_researcher/`, NOT a local clone — direct edits to `gpt_researcher/retrievers/__init__.py` or `actions/retriever.py` would be lost on `pip install --upgrade` or venv recreation. The runtime monkey-patch via `register()` is the correct integration path.
+- ENT3 keeps its `RETRIEVER = "tavily,mcp"` override (set in `process_question()` for trade pathways, restored in `finally`) — `eppo_gd` is intentionally excluded for ENT3 because trade-volume data comes from SSB, not EPPO.
+- End-to-end verified for FUSAEW (Fusarium euwallaceae) EST2 + EST1 — generated justification cited `gd.eppo.int` 2 times (EST2) and 7 times (EST1); failure-mode check with `EPPO_CODE=NOTAREALCODE` returns `[]` cleanly with `WARNING` logs.
+
+---
+
 ## [2026-05-19] - SSB MCP Integration for ENT3 + DAG Validation Schema Fix
 
 ### Added

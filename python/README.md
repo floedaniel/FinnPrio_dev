@@ -28,6 +28,13 @@ The unified script combines two complementary data sources:
 | `servers/eppo_mcp_server.py` | EPPO Global Database API with caching and rate limiting |
 | `ssb_mcp_server.py` | SSB Statistics Norway trade data (PxWebApi v2) — launched for ENT3 |
 | `ssb_query_lib.py` | Shared pure-function library used by `ssb_mcp_server.py` and `standalone_ssb_MPC.py` |
+| `nibio_mcp_server.py` | NIBIO Totalkalkylen agricultural production data — launched for IMP1, EST2, IMP2.2 |
+| `nibio_query_lib.py` | Shared pure-function library for `nibio_mcp_server.py` |
+
+### GPT Researcher Retrievers
+| File | Purpose |
+|------|---------|
+| `eppo_gd_retriever.py` | Custom GPT Researcher retriever (`EPPOGDSearch`) that scrapes `gd.eppo.int` for the species in `os.environ["EPPO_CODE"]`. Returns ≤20 newest Reporting Service articles with full body text + all EPPO PRA Platform document links as synthetic title+URL bodies. Registered at import time by `populate_finnprio_justifications.py` via `register()`, which monkey-patches `gpt_researcher.actions.retriever.get_retriever`. Process-scoped cache keyed by EPPO code. |
 
 ### Local/FREE Scripts (Ollama)
 | Script | Purpose | Cost |
