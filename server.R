@@ -976,7 +976,7 @@ server <- function(input, output, session) {
     req(assessments$entry)
 
     tabs <- lapply(names(assessments$entry), function(x){
-      tabPanel(id = x, 
+      tabPanel(value = x,
                title = pathways$data |>
                  filter(idPathway == x) |>
                  pull(name),
@@ -1077,7 +1077,7 @@ server <- function(input, output, session) {
               )
     })
     
-    ui <- do.call(tabsetPanel, tabs)
+    ui <- do.call(tabsetPanel, c(tabs, list(id = "pathway_tabset", type = "tabs")))
     return(ui)
   })
   
