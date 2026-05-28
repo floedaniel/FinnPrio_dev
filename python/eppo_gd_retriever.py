@@ -194,7 +194,23 @@ _REGISTERED = False
 
 
 def register() -> None:
-    """Patch gpt_researcher's retriever factory to recognise 'eppo_gd'.
-    Implemented in Task 6.
+    """Monkey-patch gpt_researcher's retriever factory to recognise 'eppo_gd'.
+
+    Idempotent. Safe to call multiple times.
     """
-    raise NotImplementedError("Registration implemented in Task 6")
+    global _REGISTERED
+    if _REGISTERED:
+        return
+
+    import gpt_researcher.actions.retriever as gr_factory
+
+    _original_get_retriever = gr_factory.get_retriever
+
+    def get_retriever(name: str):
+        if name == "eppo_gd":
+            return EPPOGDSearch
+        return _original_get_retriever(name)
+
+    gr_factory.get_retriever = get_retriever
+    _REGISTERED = True
+    logger.debug("EPPOGDSearch registered with gpt_researcher factory")

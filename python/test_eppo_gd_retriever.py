@@ -109,6 +109,27 @@ def test_cache_short_circuits_second_call():
     print(f"PASS  cache short-circuited (first={first_elapsed:.2f}s, second={second_elapsed*1000:.1f}ms)")
 
 
+def test_register_makes_factory_resolve_eppo_gd():
+    import gpt_researcher.actions.retriever as gr_factory
+    # Before register: gpt-researcher's factory should not know "eppo_gd"
+    assert gr_factory.get_retriever("eppo_gd") is None, \
+        "factory unexpectedly already knows 'eppo_gd' before register()"
+
+    register()
+    cls = gr_factory.get_retriever("eppo_gd")
+    assert cls is EPPOGDSearch, f"expected EPPOGDSearch, got {cls!r}"
+
+    # Idempotent: calling register again must not break anything
+    register()
+    cls2 = gr_factory.get_retriever("eppo_gd")
+    assert cls2 is EPPOGDSearch, "second register() should leave behaviour intact"
+
+    # Non-"eppo_gd" names still resolve via the original factory
+    tavily_cls = gr_factory.get_retriever("tavily")
+    assert tavily_cls is not None, "delegating to original get_retriever failed"
+    print("PASS  register() patches factory for 'eppo_gd', idempotent, delegates other names")
+
+
 if __name__ == "__main__":
     test_empty_eppo_code_returns_empty_list()
     test_unset_eppo_code_explicitly_empty_string_returns_empty_list()
@@ -117,3 +138,4 @@ if __name__ == "__main__":
     test_search_returns_reporting_results_with_bodies()
     test_search_includes_pra_links_after_reporting()
     test_cache_short_circuits_second_call()
+    test_register_makes_factory_resolve_eppo_gd()
