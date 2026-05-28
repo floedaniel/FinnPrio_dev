@@ -1309,13 +1309,13 @@ server <- function(input, output, session) {
                             input$ass_reftext,
                             input$ass_notes,
                             assessments$selected$idAssessment))
-    
-    assessments$selected$endDate <- format(now("CET"), "%Y-%m-%d %H:%M:%S")
-    assessments$selected$hosts <- input$ass_hosts
-    assessments$selected$potentialEntryPathways <- input$ass_pot_entry_path_text
-    assessments$selected$references <- input$ass_reftext
-    assessments$selected$notes <- input$ass_notes
-    
+
+    # NOTE: Same rationale as save_answers — no in-memory mirror of fields
+    # that already round-trip through dbReadTable below. (Was previously
+    # invalidating output$questionarie via assessments$selected slot
+    # tracking; Tasks 2-3 isolated those reads, and the mirror was
+    # otherwise unused.)
+
     assessments$data <- dbReadTable(con(), "assessments")
     # assessments$selected <- assessments$data[input$assessments_rows_selected, ]
     # 
@@ -1360,29 +1360,21 @@ server <- function(input, output, session) {
     current_pathways <- names(assessments$entry)
     paths_to_add <- setdiff(selected_pathways, current_pathways) |> as.integer()
     paths_to_remove <- setdiff(current_pathways, selected_pathways) |> as.integer()
-    
+
     # Add new pathways
     if (length(paths_to_add) > 0) {
       for (path_id in paths_to_add) {
         dbExecute(con(), "INSERT INTO entryPathways(idAssessment, idPathway) VALUES(?, ?)",
                   params = list(assessments$selected$idAssessment, path_id))
       }
-      # updateTabsetPanel(session, "questionarie_tab", selected = tab_now)
     } # end add
-    
-    selected_entries <- dbGetQuery(con(), glue("SELECT * FROM entryPathways 
-                                               WHERE idAssessment = {assessments$selected$idAssessment}"))
-    if (nrow(selected_entries) > 0) {
-      assessments$entry <- vector(mode = "list", length = nrow(selected_entries))
-      names(assessments$entry) <- selected_entries$idPathway
-    } else {
-      assessments$entry <- NULL
-    }
-    
-    # Remove unchecked pathways
+
+    # Remove unchecked pathways (must happen BEFORE the re-query below so
+    # selected_entries reflects the post-mutation state).
+    pathways_were_removed <- FALSE
     if (length(paths_to_remove) > 0) {
       for (path_id in paths_to_remove) {
-        idEntryPath <- dbGetQuery(con(), "SELECT idEntryPathway FROM entryPathways 
+        idEntryPath <- dbGetQuery(con(), "SELECT idEntryPathway FROM entryPathways
                                  WHERE idAssessment = ? AND idPathway = ?",
                                   params = list(assessments$selected$idAssessment, path_id)) |>
           pull(idEntryPathway)
@@ -1391,11 +1383,41 @@ server <- function(input, output, session) {
                   params = list(idEntryPath))
         dbExecute(con(), "DELETE FROM entryPathways WHERE idEntryPathway = ?",
                   params = list(idEntryPath))
-        
       }
-      updateTabsetPanel(session, "all_assessments", selected = "all")
-      proxyassessments |> selectRows(NULL)  
+      pathways_were_removed <- TRUE
     } # end remove
+
+    # Re-query AFTER both adds and removes so selected_entries is accurate.
+    selected_entries <- dbGetQuery(con(), glue("SELECT * FROM entryPathways
+                                               WHERE idAssessment = {assessments$selected$idAssessment}"))
+    if (nrow(selected_entries) > 0) {
+      assessments$entry <- vector(mode = "list", length = nrow(selected_entries))
+      names(assessments$entry) <- selected_entries$idPathway
+
+      # §4.D: refresh answers$entry to match the post-mutation entryPathways
+      # set. After Task 3, output$questionariePath reads answers$entry via
+      # isolate(); the tabset rebuild (triggered by the assessments$entry
+      # assignment above) reads whatever is in answers$entry at that moment.
+      # Without this refresh, rows for just-deleted pathways would still be
+      # present and would seed the rebuilt UI with stale data.
+      answers$entry <- dbGetQuery(con(), glue("SELECT pa.*, ep.idAssessment, ep.idPathway
+                                                FROM pathwayAnswers AS pa
+                                                LEFT JOIN entryPathways AS ep
+                                                  ON pa.idEntryPathway = ep.idEntryPathway
+                                                WHERE pa.idEntryPathway IN
+                                                  ({paste(selected_entries$idEntryPathway, collapse = ', ')})")) |>
+        mutate(across(c(min, likely, max), ~ if_else(.x == "", NA_character_, .x)))
+    } else {
+      assessments$entry <- NULL
+      answers$entry <- NULL
+    }
+
+    # Preserve existing UX: if pathways were removed, bump user back to the
+    # assessment list (the questionarie may now refer to removed tabs).
+    if (pathways_were_removed) {
+      updateTabsetPanel(session, "all_assessments", selected = "all")
+      proxyassessments |> selectRows(NULL)
+    }
     
     shinyalert(
       title = "Success",
@@ -1497,10 +1519,16 @@ server <- function(input, output, session) {
                params = list(format(now("CET"), "%Y-%m-%d %H:%M:%S"),
                              input$ass_reftext,
                              assessments$selected$idAssessment))
-     
-     assessments$selected$endDate <- format(now("CET"), "%Y-%m-%d %H:%M:%S")
-     assessments$selected$reference <- input$ass_reftext
-     
+
+     # NOTE: We do not mirror endDate / reference into assessments$selected
+     # in-memory. Mastering Shiny Ch. 14: reactiveValues slot writes
+     # propagate as reference semantics, so this used to invalidate
+     # output$questionarie. Tasks 2-3 isolated those reads, so the
+     # invalidation is gone — but the mirror was also redundant
+     # (assessments$data is refreshed below; nothing else reads
+     # assessments$selected$endDate / $reference between save and the next
+     # selection). Removing both write and downstream read.
+
      assessments$data <- dbReadTable(con(), "assessments")
      # assessments$selected <- assessments$data[input$assessments_rows_selected, ]
      # assessments$selected <- assessments$selected |> 
