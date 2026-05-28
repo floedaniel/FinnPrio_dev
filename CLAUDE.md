@@ -310,14 +310,17 @@ Scripts for data migration and database repairs:
 ### Populate Database Scripts (`scripts/populate database scripts/`)
 
 Scripts for bulk data population with EPPO data and master database management:
+- `0_batch_populate_eppo.R`: Batch EPPO data population across multiple databases
 - `1_populate_eppo_pests_table_db.R`: Bulk pest data import (sets default values for required fields)
 - `2_populate_eppo_assesment_host.R`: Assessment-host relationship setup
 - `3_populate_eppo_notes_datasheet.R`: Notes field population
 - `4_populate_eppo_pathwayshosts.R`: Pathway-host relationships
 - `5_populate_eppo_distribution.R`: Geographic distribution data
 - `6_sdm_populator.R`: Populates EST1 justification with Maxent SDM model results for Norway/Sweden (reads `model_summary.json` from SDMtune folders)
-- `7_populate_masterdatabase.R`: Merges all assessor `4_master` databases under a base directory into a single master database; backs up existing master with timestamp before overwriting; deduplicates assessors by name and pests by EPPO code
+- `7_populate_database.R`: Merges all assessor `4_master` databases under a base directory into a single master database; backs up existing master with timestamp before overwriting; deduplicates assessors by name and pests by EPPO code
 - `8_batch_simulation.R`: Batch runs Monte Carlo simulations for all assessments in a FinnPRIO database
+- `9_populate_plot.R`: Extracts simulation summaries from master database and produces risk matrix plots (invasion vs impact, establishment vs impact, total risk score lollipop); groups species by taxonomy (Arthropoda, Fungi, Viruses, etc.); includes diagnosis section for missing/unplotted species
+- `10_populate_master_database.R`: Merges yearly databases (`yearly copies/`) into the cumulative `master_finnprio.db` in `databases/master_database/`; deduplicates by EPPO code at **master pest ID level** — if two source pests share the same EPPO code (e.g. capitalisation variants), only the assessment with the newest simulation date is inserted (falls back to `endDate` when neither has a simulation); assessors deduplicated by firstName+lastName; after merging, safely deletes assessments with no justifications, no values, AND no simulations (all related rows removed in FK order); backs up master to `databases/master_database/backups/` before any changes
 
 ### Support Scripts (`scripts/div support scripts/`)
 
@@ -342,11 +345,22 @@ Diagnostic and troubleshooting utilities:
 Python scripts for automatically generating justifications and populating min/likely/max values using AI:
 
 **Main Scripts:**
-- `populate_finnprio_justifications.py`: Main script using GPT Researcher for web research
+- `populate_finnprio_justifications.py`: Main script using GPT Researcher for web research; ENT3 attaches the SSB MCP server for trade-volume data (trade pathways only: Seeds, Plants for planting, Wood, Food/fodder, Other living plant parts — Hitchhiking/Natural spread/Intentional introduction skip SSB); IMP1, EST2, and IMP2.2 attach the NIBIO MCP server for Norwegian agricultural production statistics
 - `populate_finnprio_justifications_mcp.py`: MCP server version with caching and persistent connection
 - `populate_finnprio_justifications_anthropic.py`: Claude (Anthropic) version with optimized prompts
 - `populate_finnprio_values.py`: Determines min/likely/max values from justifications
 - `view_justifications.py`: Utility to view generated justifications
+- `inspect_prompts.py`: Renders all LLM prompts without API calls — use for prompt review and debugging
+
+**SSB Statistics Norway integration (ENT3):**
+- `ssb_query_lib.py`: Pure SSB PxWebApi v2 helper functions (no AI SDK). Five functions: `ssb_search_tables`, `ssb_get_metadata`, `ssb_search_codes`, `ssb_query_data`, `toll_search_hs_codes`. Used by both `ssb_mcp_server.py` and `standalone_ssb_MPC.py`. Includes 8 MB response cap and 120 s wall-clock timeout.
+- `ssb_mcp_server.py`: FastMCP 3.x server exposing five tools (four SSB + `search_tariff_codes`). Launched as stdio subprocess for ENT3 on trade pathways only (`pathway_uses_ssb()` gate in `populate_finnprio_justifications.py`).
+- `standalone_ssb_MPC.py`: CLI agent for ad-hoc SSB queries (imports from `ssb_query_lib.py`).
+- `customstariffstructure.xml`: Norwegian customs tariff (English) cached locally on first use — downloaded from data.toll.no; 4.2 MB, 7 436 8-digit commodity codes. Used by `toll_search_hs_codes()` to resolve host plant keywords to exact SSB `Varekoder` before querying table 08801.
+
+**NIBIO Totalkalkylen integration (IMP1, EST2, IMP2.2):**
+- `nibio_query_lib.py`: Pure NIBIO Totalkalkylen API helper functions (no AI SDK). Three functions: `nibio_list_groups`, `nibio_list_posts`, `nibio_get_data`. Returns 68-year production time series (1959–2026) with kvantum (Tonn), pris (Kr/100 kg), verdi (1000 kr).
+- `nibio_mcp_server.py`: FastMCP 3.x server exposing three tools (`list_groups`, `list_posts`, `get_data`). Launched as stdio subprocess for IMP1, EST2, and IMP2.2 regular questions. Key groups: 2606=Korn, 2607=Poteter, 2608=Hagebruksprodukter, 2641=Jordbruksareal (daa by crop type).
 
 **Instructions System (v2.0):**
 - `parse_rmd_instructions.py`: Parses Rmd to structured JSON with options and guidance
@@ -364,6 +378,14 @@ The instructions system loads question-specific guidance from `information/Instr
 
 See `python/README.md` for detailed documentation and `python/CHANGELOG.md` for version history.
 
+**SSB MCP gotchas** (relevant to ENT3 in `populate_finnprio_justifications.py`):
+- `build_ent3_mcp_configs()` uses `sys.executable` (not `"python"`) so the subprocess inherits the venv — do NOT pass `env: {}` (strips subprocess environment, wrong FastMCP version)
+- `RETRIEVER` is temporarily set to `"tavily,mcp"` for MCP questions only, restored in `finally`; `MCP_AUTO_TOOL_SELECTION=true` enables tool discovery
+- `mcp_strategy="fast"` runs MCP once for the main query; suits both ENT3 (single-shot trade lookup) and NIBIO (chained group→post→data calls within the same session)
+- SSB `query_data` caps at 8 MB / 120 s wall clock / 500 non-zero rows — if SSB returns an error JSON the pipeline logs a warning and continues
+- `SSB_PATHWAYS` set in `populate_finnprio_justifications.py` gates SSB activation: keywords `"seeds"`, `"plants for planting"`, `"wood"`, `"food"`, `"fodder"`, `"living plant"` — Hitchhiking, Natural spread, Intentional introduction never trigger SSB
+- `toll_search_hs_codes()` downloads `customstariffstructure.xml` on first call and caches it in `python/`; subsequent calls use the in-memory index — no re-download during a pipeline run
+
 **`gpt_researcher` API gotchas** (relevant to `Populate_finprio_justifications_deep.py`):
 - `Tone` enum: `from gpt_researcher.utils.enum import Tone`
 - `report_source` takes a string literal: `"web"` / `"local"` / `"hybrid"`
@@ -378,6 +400,9 @@ See `python/README.md` for detailed documentation and `python/CHANGELOG.md` for 
 For detailed changelog of all updates, features, bug fixes, and improvements, see **CHANGELOG.md**.
 
 **Latest major updates:**
+- **May 2026**: Master DB pipeline hardened — `databases/master database/` renamed to `databases/master_database/` (underscore), output renamed to `master_finnprio.db`, backups routed to `backups/` subfolder; dedup fix in `10_populate_master_database.R` now groups by master pest ID (not source pest ID) to prevent EPPO-code capitalisation variants from inserting duplicate assessments; FinnPRIO Explorer defaults updated — all filter checkboxes pre-ticked, default colour = taxonomic group, risk rank plot height dynamic; Explorer `global.R` switched to relative DB path; deployment script uses explicit `appFiles`
+- **May 2026**: NIBIO Totalkalkylen MCP integration — IMP1, EST2, IMP2.2 now query Norwegian agricultural production statistics (kvantum/pris/verdi, 1959–2026) via `nibio_mcp_server.py`; Norwegian customs tariff search added to `ssb_query_lib.py` (`toll_search_hs_codes`) and `ssb_mcp_server.py` (`search_tariff_codes`) — AI resolves host plant keywords to exact 8-digit SSB Varekoder before querying table 08801; SSB activation gated to trade pathways only (Seeds, Plants for planting, Wood, Food/fodder, Other living plant parts)
+- **May 2026**: SSB MCP integration — ENT3 now queries real Statistics Norway trade data via `ssb_mcp_server.py` (FastMCP 3.x stdio); `ssb_query_lib.py` extracted as shared pure-function library; `dag_validation_stub.py` schema corrected to actual `answers`/`pathwayAnswers` tables; IMP2.x boolean parser fix, boolean value-selection fix for IMP2.2/2.3/IMP4.2/4.3 (opt codes `'b'`/`'c'` — not always `'a'`), MAN1 Rmd corrected to 3 options (a/b/c) matching DB (was erroneously 5), hallucination retry in value selection, new `inspect_prompts.py` for dry-run prompt review, prompt boilerplate refactored into named constants with unified `create_research_query()` structure
 - **February 2026**: Instructions System v2.0 - Restructured Rmd file with `### Options` and `### Guidance` sections, explicit km²/ha/kg thresholds, updated parser and loader for cleaner AI prompts
 - **February 2026**: Python folder cleanup - renamed scripts (`populate_finnprio_justifications.py`, `populate_finnprio_justifications_mcp.py`), removed 22 unnecessary files, added MCP server version with caching
 - **February 2026**: Complete UI/UX overhaul with CSS rebuild (v36.0 → v37.3), color-coded sections, enhanced typography, prominent justification boxes, and 8-color pathway tabs

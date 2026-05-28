@@ -52,10 +52,11 @@ render_quest_tab <- function(tag, qid, question,
   
   for (i in seq_len(nrow(table_data))) {
     if (!is.null(answers)) {
-      is_checked <- answers |> 
-        filter(ques_tag_opt == rownames(table_data)[i]) |> 
-        select(Minimum, Likely, Maximum) |> 
-        as.logical() #new
+      is_checked <- answers |>
+        filter(ques_tag_opt == rownames(table_data)[i]) |>
+        select(Minimum, Likely, Maximum) |>
+        as.logical()
+      if (length(is_checked) == 0) is_checked <- c(FALSE, FALSE, FALSE)
     } else {
       is_checked <- c(FALSE, FALSE, FALSE)
     }
@@ -471,9 +472,9 @@ answers_2_logical <- function(df, questions) {
       df$question_tag[i] <- question_tag
       
       row <- df[i, ]
-      options <- unique(c(row$min, row$likely, row$max)) |> 
+      options <- unique(c(row$min, row$likely, row$max)) |>
         na.omit()
-      
+
       for (opt in options) {
         result <- rbind(result, data.frame(
           question_tag = row$question_tag,
@@ -486,23 +487,24 @@ answers_2_logical <- function(df, questions) {
         ))
       }
     }
+    if (nrow(result) == 0) result <- NULL
   } else {
     result <- NULL
   }
-  
+
   return(result)
 }
 
 answers_path_2_logical <- function(df, questions) {
   if (nrow(df) > 0) {
     result <- data.frame()
-    
+
     for (i in seq_len(nrow(df))) {
-      wQues <- questions |> 
+      wQues <- questions |>
         filter(idPathQuestion == df$idPathQuestion[i])
       question_tag <- paste0(wQues$group, wQues$number, "_", df$idPathway[i])
       df$question_tag[i] <- question_tag
-      
+
       row <- df[i, ]
       options <- unique(c(row$min, row$likely, row$max))
       
@@ -518,10 +520,11 @@ answers_path_2_logical <- function(df, questions) {
         ))
       }
     }
+    if (nrow(result) == 0) result <- NULL
   } else {
     result <- NULL
   }
-  
+
   return(result)
 }
 

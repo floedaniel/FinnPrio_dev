@@ -17,7 +17,7 @@ library(jsonlite)
 
 # -------------------------------------------------------------------------
 
-API_KEY_FILE <- "C:/Users/dafl/Desktop/API keys/EPPO_beta.txt"
+API_KEY_FILE <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/API keys/EPPO_beta.txt"
 
 # Set to TRUE to only create assessments for pests that don't have one yet
 ONLY_MISSING <- TRUE
@@ -30,9 +30,18 @@ api_key <- readLines(API_KEY_FILE, warn = FALSE)[1]
 # Connect to database
 con <- dbConnect(RSQLite::SQLite(), DB_FILE)
 
-# Show available assessors
+# Show available assessors and validate DEFAULT_ASSESSOR_ID
 cat("Available assessors:\n")
-print(dbGetQuery(con, "SELECT idAssessor, firstName, lastName FROM assessors"))
+assessors_df <- dbGetQuery(con, "SELECT idAssessor, firstName, lastName FROM assessors")
+print(assessors_df)
+
+if (!DEFAULT_ASSESSOR_ID %in% assessors_df$idAssessor) {
+  dbDisconnect(con)
+  stop("DEFAULT_ASSESSOR_ID = ", DEFAULT_ASSESSOR_ID,
+       " does not exist in the assessors table. Valid IDs: ",
+       paste(assessors_df$idAssessor, collapse = ", "))
+}
+
 cat("\nUsing assessor ID:", DEFAULT_ASSESSOR_ID, "\n\n")
 
 # Get pests to process ---------------------------------------------------------

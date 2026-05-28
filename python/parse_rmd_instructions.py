@@ -37,9 +37,10 @@ class RmdParsingError(Exception):
 class RmdInstructionsParser:
     """Parser for FinnPRIO Instructions Rmd file (new clean format)"""
 
-    # Question code patterns - matches ## ENT1. or ## MAN1. etc.
+    # Question code patterns - matches ## ENT1. or ## IMP 2.1. etc.
+    # Handles optional space between prefix and number (e.g. "IMP 2.1") and sub-numbers (e.g. "2.1")
     QUESTION_PATTERN = re.compile(
-        r'^##\s+(?P<code>(?:ENT|EST|IMP|MAN)\d+[AB]?)\.\s*(?P<text>.+)$',
+        r'^##\s+(?P<code>(?:ENT|EST|IMP|MAN)\s*\d+(?:\.\d+)?[AB]?)\.\s*(?P<text>.+)$',
         re.MULTILINE
     )
 
@@ -123,7 +124,7 @@ class RmdInstructionsParser:
     def _parse_questions(self):
         """Parse all questions from Rmd"""
         for match in self.QUESTION_PATTERN.finditer(self.content):
-            code = match.group('code')
+            code = match.group('code').replace(' ', '')  # normalize "IMP 2.1" -> "IMP2.1"
             text = match.group('text').strip()
 
             # Extract content until next ## header
@@ -161,8 +162,8 @@ class RmdInstructionsParser:
         if code == 'EST4':
             question['scoring_characteristics'] = self._extract_est4_characteristics(content)
 
-        if code in ['IMP2', 'IMP4']:
-            question['sub_questions'] = self._extract_sub_questions(content)
+        # IMP2/IMP4 restructured 2026-04-17: IMP2.1/.2/.3 and IMP4.1/.2/.3 are top-level entries
+        # (not sub-questions under a parent IMP2/IMP4 heading), so this branch is dead.
 
         return question
 
@@ -188,7 +189,9 @@ class RmdInstructionsParser:
 
     def _determine_type(self, code: str) -> str:
         """Determine question type (minmax or boolean)"""
-        if code in ['IMP2', 'IMP4']:
+        # IMP2/IMP4 restructured 2026-04-17: IMP2.1/.2/.3 and IMP4.1/.2/.3 are top-level entries
+        # (not sub-questions under a parent IMP2/IMP4 heading); bare 'IMP2'/'IMP4' never appear.
+        if code.startswith('IMP2.') or code.startswith('IMP4.'):
             return 'boolean'
         return 'minmax'
 
@@ -203,9 +206,12 @@ class RmdInstructionsParser:
 
         options_content = options_match.group(1)
 
-        # IMP2 and IMP4 are boolean - no options to extract
-        if code in ['IMP2', 'IMP4']:
-            return []
+        # IMP2/IMP4 restructured 2026-04-17: IMP2.1/.2/.3 and IMP4.1/.2/.3 are top-level entries
+        # (not sub-questions under a parent IMP2/IMP4 heading); bare 'IMP2'/'IMP4' never appear.
+        # Some IMP2.x/IMP4.x questions have **Yes**/**No** options in the Rmd; parse those.
+        # Questions whose Options section repeats the question text (e.g. IMP2.1) will return [].
+        if code.startswith('IMP2.') or code.startswith('IMP4.'):
+            return self._extract_boolean_options(options_content)
 
         # Parse options: **a. Text** (detail) followed by description paragraph
         # Pattern handles: **a. Small** (<2 million km²) or **a.** It would not cause...
@@ -246,6 +252,44 @@ class RmdInstructionsParser:
                 'text': current_title,
                 'description': ' '.join(current_description_lines).strip() if current_description_lines else None,
                 'points': ord(current_letter) - ord('a') + 1
+            })
+
+        return options
+
+    def _extract_boolean_options(self, options_content: str) -> List[Dict]:
+        """Extract **Yes**/**No** options from a boolean question's Options section.
+
+        Returns [] when the Options section does not follow the **Yes**/**No** format
+        (e.g. IMP2.1 / IMP2.3 / IMP4.x whose Options section merely repeats the
+        question text).  The opt codes 'yes' / 'no' are for prompt display only;
+        the database answer code for YES is always 'a'.
+        """
+        options = []
+        current_key = None
+        current_desc_lines: List[str] = []
+
+        for line in options_content.split('\n'):
+            stripped = line.strip()
+            bool_match = re.match(r'^\*\*(Yes|No)\*\*$', stripped, re.IGNORECASE)
+            if bool_match:
+                if current_key is not None:
+                    options.append({
+                        'opt': current_key.lower(),
+                        'text': current_key,
+                        'description': ' '.join(current_desc_lines).strip() or None,
+                        'points': 1 if current_key.lower() == 'yes' else 0
+                    })
+                current_key = bool_match.group(1)
+                current_desc_lines = []
+            elif stripped and current_key is not None and not stripped.startswith('**') and not stripped.startswith('#'):
+                current_desc_lines.append(stripped)
+
+        if current_key is not None:
+            options.append({
+                'opt': current_key.lower(),
+                'text': current_key,
+                'description': ' '.join(current_desc_lines).strip() or None,
+                'points': 1 if current_key.lower() == 'yes' else 0
             })
 
         return options
@@ -397,7 +441,7 @@ class RmdInstructionsParser:
         required_codes = [
             'ENT1', 'ENT2A', 'ENT2B', 'ENT3', 'ENT4',
             'EST1', 'EST2', 'EST3', 'EST4',
-            'IMP1', 'IMP2', 'IMP3', 'IMP4',
+            'IMP1', 'IMP2.1', 'IMP2.2', 'IMP2.3', 'IMP3', 'IMP4.1', 'IMP4.2', 'IMP4.3',
             'MAN1', 'MAN2', 'MAN3', 'MAN4', 'MAN5'
         ]
 
@@ -405,9 +449,12 @@ class RmdInstructionsParser:
         if missing:
             print(f"[Warning] Missing questions: {missing}")
 
-        # Validate options exist
+        # Validate options exist (boolean questions have no options by design)
+        # IMP2/IMP4 restructured 2026-04-17: IMP2.1/.2/.3 and IMP4.1/.2/.3 are top-level entries
+        # (not sub-questions under a parent IMP2/IMP4 heading); bare 'IMP2'/'IMP4' never appear.
         for code, q in self.questions.items():
-            if not q.get('options') and code not in ['IMP2', 'IMP4']:
+            is_boolean = code.startswith('IMP2.') or code.startswith('IMP4.')
+            if not q.get('options') and not is_boolean:
                 print(f"[Warning] No options parsed for {code}")
 
     def _build_output(self) -> Dict:

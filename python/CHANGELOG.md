@@ -4,6 +4,91 @@ All notable changes to the Python AI enhancement scripts.
 
 ---
 
+## [2026-05-19] - SSB MCP Integration for ENT3 + DAG Validation Schema Fix
+
+### Added
+- **`ssb_query_lib.py`** — Pure SSB PxWebApi v2 helper library (no Anthropic/OpenAI SDK). Exposes four functions used by both the MCP server and the standalone CLI:
+  - `ssb_search_tables` — search tables by keyword
+  - `ssb_get_metadata` — variable codes and labels (first 30 per variable)
+  - `ssb_search_codes` — filter codes within a variable by search term
+  - `ssb_query_data` — POST query, returns flattened rows
+  - **Safety limits**: 8 MB response cap (Content-Length pre-check + chunked streaming cap), 120 s wall-clock deadline via `time.monotonic()` (guards slow-trickle responses that bypass the 60 s per-read socket timeout), early exit at 500 non-zero rows to keep LLM context manageable
+- **`ssb_mcp_server.py`** — FastMCP 3.x server wrapping the four SSB functions as `@mcp.tool` endpoints with domain-aware docstrings (HS chapter mappings, genus-level codes for chapter 44). Launched as a stdio subprocess by GPT Researcher for ENT3 only; no service to manage.
+- **ENT3 SSB MCP integration** (`populate_finnprio_justifications.py`):
+  - `build_ent3_mcp_configs()` — returns the `mcp_configs` list for the SSB subprocess. Uses `sys.executable` (inherits venv) — no `env:{}` which would strip the subprocess environment.
+  - `build_ent3_ssb_context()` — builds a context block injected into the ENT3 research query: pathway name, years (last 5), HS chapter list, host genera extracted from `assessments.hosts`, ENT1 and EST1 excerpts from prior DAG answers.
+  - `RETRIEVER` temporarily set to `"tavily,mcp"` and `MCP_AUTO_TOOL_SELECTION=true` while processing ENT3; both restored in `finally`.
+  - `mcp_strategy="fast"` — GPT Researcher runs MCP once for the main query (suits single-shot trade-volume lookup).
+
+### Changed
+- **`standalone_ssb_MPC.py`** — Removed the inline definitions of the four SSB API functions (~120 lines) and replaced with a single import from `ssb_query_lib`. CLI behaviour (`run()`, `main()`, `TOOLS`, `TOOL_DISPATCH`, `SYSTEM_PROMPT`) is unchanged.
+
+### Fixed
+- **`dag_validation_stub.py`** — Replaced placeholder table names (`answerValues`, `pathwayValues`) and columns (`val_min`, `val_likely`, `val_max`) with the actual FinnPRIO schema:
+  - Regular answers: `answers a JOIN questions q ON a.idQuestion = q.idQuestion` — columns `a.min`, `a.likely`, `a.max`
+  - Pathway answers: `pathwayAnswers pa JOIN pathwayQuestions pq ON pa.idPathQuestion = pq.idPathQuestion` — same column names
+  - Added None-value guard before `c_likely > s_likely` numeric comparison (boolean NO answers have NULL option codes in all three columns)
+
+---
+
+## [2026-05-15] - IMP2.x Parser Fix, inspect_prompts.py, Prompt Refactor
+
+### Fixed
+- **IMP2.x boolean options not parsed** (`parse_rmd_instructions.py`): `_extract_options()` was discarding
+  all options for `IMP2.x` and `IMP4.x` questions with an early return. Added `_extract_boolean_options()`
+  that reads `**Yes**` / `**No**` Rmd option blocks and returns `[{opt: 'yes', points: 1}, {opt: 'no', points: 0}]`.
+  IMP 2.2 ("Is the pest a vector for other pests?") was the confirmed broken case.
+- **Wrong answer code for boolean YES** (`instructions_loader.py`, `build_value_selection_prompt()`):
+  The boolean branch was deriving the YES code from parsed `opt` values (`'yes'`) instead of the database
+  code (`'a'`). Hardcoded `option_code = 'a'` for the boolean branch to match database expectations.
+- **Boolean value selection failing for IMP2.2/IMP2.3/IMP4.2/IMP4.3** (`populate_finnprio_values.py`,
+  `instructions_loader.py`): The database YES opt code varies per sub-question (`'a'` for IMP2.1/IMP4.1,
+  `'b'` for IMP2.2/IMP4.2, `'c'` for IMP2.3/IMP4.3). `build_value_selection_prompt()` hardcoded
+  `option_code = 'a'`, so the LLM returned `'a'` but `valid_opts` was `{'b'}` or `{'c'}` — a ValueError
+  on every call for four of the six sub-questions. Fixed in two places:
+  - `instructions_loader.py`: derive `option_code` from `options_override[0]['opt']` instead of `'a'`
+  - `populate_finnprio_values.py`: added `_call_gpt_boolean()` that routes boolean questions through a
+    dedicated yes/no prompt (temperature=0, returns `{"answer":"YES/NO"}`), maps YES → correct opt code,
+    NO → all-null; `determine_values_with_gpt()` routes `question_type == 'boolean'` here, bypassing the
+    min/likely/max path entirely
+
+### Added
+- **`inspect_prompts.py`**: New utility script that renders all LLM prompts without making any API calls.
+  - Iterates all questions in canonical assessment order (ENT → EST → IMP → MAN)
+  - Per question: metadata (group, type, options), Instructions Fragment (`build_justification_prompt`),
+    and Full Research Query (`create_research_query`) in fenced code blocks
+  - Graceful fallback when `gpt_researcher` is unavailable (shows fragment only, explains what is missing)
+  - Flags host-related questions where `DOCUMENTED HOST PLANTS` block is absent without a DB connection
+  - GPT Researcher config section at the top (env vars + constructor args + excluded domains)
+  - Usage: `python inspect_prompts.py --output prompt_inspection.md [--species "Name"]`
+
+### Changed
+- **Prompt boilerplate deduplication** (`populate_finnprio_justifications.py`): Extracted three module-level
+  constants — `_ANSWERING_RULES`, `_SOURCES`, `_FORMAT_RULES` — replacing ~80 lines duplicated across two
+  `create_research_query()` branches.
+- **`create_research_query()` restructured**: Single code path regardless of Rmd vs. fallback instructions.
+  New section order: metadata header → question block → ANSWERING RULES → SOURCES → FORMAT → EXCLUDED DOMAINS.
+  Species and pathway stated once in the header; removed from `build_justification_prompt()` prefix.
+  Added `exclude_domains` parameter so callers pass the list directly instead of appending manually.
+- **`_SOURCES` constant**: Added SSB (Statistics Norway) and Eurostat as explicit trade/production data sources.
+- **`_FORMAT_RULES` constant**: Added "Answer the question directly in the first sentence" as first rule.
+- **`build_justification_prompt()`** (`instructions_loader.py`): Removed species/pathway prefix — species
+  now appears only once, in the outer query header assembled by `create_research_query()`.
+
+### Fixed (continued)
+- **MAN1 Rmd/DB sync resolved** (`Instructions_FinnPRIO_assessments.Rmd`, `populate_finnprio_values.py`):
+  Rmd v2.0 had inadvertently given MAN1 five options (a–e) while the DB `questions.list` retained three
+  (a–c), causing LLM-returned codes `'d'`/`'e'` to fail DB validation. The intermediate `effective_options`
+  workaround (Rmd-preferred validation) introduced in the same session has been reverted: MAN1 in the
+  Rmd has been corrected to three options (a/b/c) matching the DB, so `_call_gpt_for_values` now
+  validates against DB options as originally intended. Stale JSON cache deleted and regenerated.
+- **LLM hallucination retry** (`populate_finnprio_values.py`): Added one-shot retry to
+  `_call_gpt_for_values` when an invalid option code is returned. On first failure the prompt is
+  re-sent with an explicit `"Use ONLY: 'a', 'b', 'c'"` correction; on second failure the error is
+  raised as before. Fixes MAN2 returning `'d'` (and any similar hallucinations).
+
+---
+
 ## [2026-02-26] - Hybrid Research Script
 
 ### Added

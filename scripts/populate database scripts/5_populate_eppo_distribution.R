@@ -11,13 +11,13 @@ library(RSQLite)
 # -------------------------------------------------------------------------
 
 # Database connection
-# DB_FILE <- "./databases/selam_database_2026/selam_test_species.db"
+# DB_FILE <- "./databases/daniel_database_2026/daniel.db"
 
 # -------------------------------------------------------------------------
 con <- dbConnect(SQLite(), DB_FILE)
 
 # Read API key
-api_key <- readLines("C:/Users/dafl/Desktop/API keys/EPPO_beta.txt", warn = FALSE)[1]
+api_key <- readLines("C:/Users/dafl/OneDrive - Folkehelseinstituttet/API keys/EPPO_beta.txt", warn = FALSE)[1]
 
 # Get pests from database WITH their assessment IDs
 pests_df <- dbGetQuery(con, 
@@ -85,7 +85,8 @@ create_ent1_justification <- function(eppocode, api_key, countries_flat, status_
     dist_translated <- dist_data |>
       left_join(countries_flat, by = c("country_iso" = "country_iso", "state_id" = "state_code")) |>
       left_join(status_ref, by = "peststatus") |>
-      mutate(country_name = countrycode(country_iso, origin = "iso2c", destination = "country.name"))
+      mutate(country_name = countrycode(country_iso, origin = "iso2c", destination = "country.name",
+                                        custom_match = c(CS = "Serbia and Montenegro")))
     
     # Filter only "Present" records
     present <- dist_translated |>
@@ -147,7 +148,7 @@ for (i in seq_len(nrow(pests_df))) {
     dbExecute(con, 
               "INSERT INTO answers (idAssessment, idQuestion, min, likely, max, justification) 
        VALUES (?, ?, ?, ?, ?, ?)",
-              params = list(idAssessment, q, "", "", "", justification)
+              params = list(idAssessment, q, NA, NA, NA, justification)
     )
   }
   

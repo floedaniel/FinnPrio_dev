@@ -11,33 +11,28 @@ library(rgbif)
 
 # -------------------------------------------------------------------------
 
-DB_FILE <- "./databases/sandra_database_2026/sandra.db"
+ DB_FILE <- "./databases/iben_database_2026/XYLEFA.db"
 
 # INPUT - Your EPPO codes here -------------------------------------------------
 # Sys.setlocale("LC_ALL", "en_US.UTF-8")
-master_species <- rio::import("C:/Users/dafl/Downloads/master_species.xlsx") %>% as_tibble()
-
+#master_species <- rio::import("C:/Users/dafl/Downloads/master_species.xlsx") %>% as_tibble()
 # master_df <- master_species %>% filter(is.na(Batch))
+#master_species %>% distinct(assessor)
+#master_df <- master_species %>% filter(assessor=="Sandra A. I. Wright")
+#master_df <- master_df %>% filter(!status=="completed")
+#master_df <- master_df %>% filter(!status=="already regulated")
+#master_df
+#input <- master_df$eppocode
 
-master_species %>% distinct(assessor)
-
-master_df <- master_species %>% filter(assessor=="Sandra A. I. Wright")
-
-master_df <- master_df %>% filter(!status=="completed")
-master_df <- master_df %>% filter(!status=="already regulated")
-master_df
-
-input <- master_df$eppocode
-
-input
+input <- EPPO_CODES
 
 # OPTIONAL: Add assessor to database -----------------------------------------------
 # Set ADD_ASSESSOR to TRUE if you want to add/check an assessor
-ADD_ASSESSOR <- TRUE
+ADD_ASSESSOR <- FALSE
 
-assessor_first_name <- "Sandra"
-assessor_last_name  <- "Wright"
-assessor_email      <- "sandra.wright@hig.se" #NA_character_  # Optional, can be NA
+#assessor_first_name <- "Sandra"
+#assessor_last_name  <- "Wright"
+#assessor_email      <- "sandra.wright@hig.se" #NA_character_  # Optional, can be NA
 
 # Connect to database
 con <- dbConnect(RSQLite::SQLite(), DB_FILE)
@@ -72,10 +67,6 @@ if (ADD_ASSESSOR) {
 }
 
 # Configuration ----------------------------------------------------------------
-API_KEY_FILE <- "C:/Users/dafl/Desktop/API keys/EPPO_beta.txt"
-
-api_key <- readLines(API_KEY_FILE, warn = FALSE)[1]
-
 
 # Get starting ID
 max_id <- dbGetQuery(con, "SELECT MAX(idPest) as max_id FROM pests")$max_id

@@ -28,14 +28,14 @@ source("R/internal functions.R")  # For get_points_as_table()
 # =============================================================================
 
 # Database Path
-#DB_PATH <- "python/outputs/old_test_ai_enhanced_03_02_2026.db"
-#DB_PATH <- "databases/finnprio_assessments_database_2025/FinnPrio_fg9_batch_1_2025.db"
+# DB_PATH <- "python/outputs/old_test_ai_enhanced_03_02_2026.db"
+# DB_PATH <- "databases/finnprio_assessments_database_2025/FinnPrio_fg9_batch_1_2025.db"
 
 DB_PATH <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/finnprio_2026/master_database_2026/master_database_2026.db"
 
 # Simulation Settings
 ITERATIONS <- 50000  # Number of Monte Carlo iterations (default: 50000)
-LAMBDA <- 5          # PERT distribution shape parameter (default: 1)
+LAMBDA <- 4          # PERT distribution shape parameter (default: 1). Heikkilä et al. used λ = 4 (the standard PERT shape). 
 WEIGHT1 <- 0.5       # Weight for economic impact (IMP1 + IMP2)
 WEIGHT2 <- 0.5       # Weight for environmental/social impact (IMP3 + IMP4)
 

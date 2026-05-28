@@ -88,22 +88,27 @@ def get_question_instructions(question_code: str) -> Dict:
         KeyError: If question not found in instructions.
     """
     instructions = load_instructions()
+    questions = instructions.get('questions', {})
 
-    # Handle sub-questions (IMP2.1 -> IMP2)
-    base_code = question_code.split('.')[0]
+    # Normalize: strip trailing dot (ENT1. -> ENT1)
+    clean_code = question_code.rstrip('.')
 
-    # Also handle codes with trailing dot (ENT1. -> ENT1)
-    base_code = base_code.rstrip('.')
+    # Try exact code first (handles IMP2.1, IMP2.2, IMP2.3 as top-level keys)
+    question = questions.get(clean_code)
+    if question:
+        return question
 
-    question = instructions.get('questions', {}).get(base_code)
+    # Fall back to base code for sub-questions nested under a parent (IMP4.1 -> IMP4)
+    base_code = clean_code.split('.')[0]
+    question = questions.get(base_code)
     if not question:
-        available = list(instructions.get('questions', {}).keys())
+        available = list(questions.keys())
         raise KeyError(f"Question '{question_code}' not found in instructions. Available: {available}")
 
     # For sub-questions, add sub_question context
-    if '.' in question_code and question.get('sub_questions'):
+    if '.' in clean_code and question.get('sub_questions'):
         for subq in question['sub_questions']:
-            if subq['code'] == question_code:
+            if subq['code'] == clean_code:
                 return {
                     **question,
                     'current_subquestion': subq
@@ -135,19 +140,15 @@ def build_justification_prompt(
     """
     q = get_question_instructions(question_code)  # Raises KeyError if not found
 
-    pathway_text = f' via the pathway "{pathway_name}"' if pathway_name else ""
-
-    # Build the prompt
+    # Build the prompt — species/pathway are stated once in the outer query header
+    # (create_research_query), so they are not repeated here.
     prompt_parts = []
 
-    # Question header
-    prompt_parts.append(f"""Answer the following question about {pest_name}{pathway_text}:
-
-QUESTION ({q['code']}): {q['text']}""")
+    prompt_parts.append(f"QUESTION ({q['code']}): {q['text']}")
 
     # Add hosts information for host-related questions
-    host_related_questions = ['EST1', 'EST2', 'EST3', 'IMP1', 'IMP2', 'IMP3', 'IMP4']
-    if hosts and question_code in host_related_questions:
+    host_related_prefixes = ('EST1', 'EST2', 'EST3', 'IMP1', 'IMP2', 'IMP3', 'IMP4')
+    if hosts and question_code.startswith(host_related_prefixes):
         prompt_parts.append(f"""
 
 DOCUMENTED HOST PLANTS FOR THIS PEST:
@@ -213,19 +214,22 @@ def build_value_selection_prompt(
     Build prompt for value (min/likely/max) selection.
 
     Includes full instructions from Rmd so AI can compare justification against criteria.
+    Rmd options (with descriptions) are always preferred over DB options.
 
     Args:
         question_code: Question code (e.g., "ENT1", "EST4")
         pest_name: Scientific name of the pest
         justification: The AI-generated justification text to analyze
-        options_override: Override options (from database) if different from Rmd
+        options_override: DB options used only as fallback when Rmd has none
 
     Returns:
         Formatted prompt string for GPT value selection
     """
     q = get_question_instructions(question_code)  # Raises KeyError if not found
 
-    options = options_override or q.get('options', [])
+    # Prefer Rmd options (have rich descriptions); fall back to DB options only if Rmd has none
+    rmd_options = q.get('options', [])
+    options = rmd_options if rmd_options else (options_override or [])
     question_type = q.get('type', 'minmax')
 
     # Build FULL options text with descriptions
@@ -271,7 +275,9 @@ Match numeric values in the justification to thresholds in the options.
 Return ONLY: {{"min": "a", "likely": "b", "max": "c"}}"""
 
     else:  # boolean type (IMP2, IMP4)
-        option_code = options[0]['opt'] if options else 'a'
+        # YES code differs per sub-question: 'a' for IMP2.1/IMP4.1, 'b' for IMP2.2/IMP4.2,
+        # 'c' for IMP2.3/IMP4.3 — derive from the DB options passed by the caller.
+        option_code = options_override[0]['opt'] if options_override else 'a'
 
         # Check if this is a specific sub-question (e.g., IMP4.3)
         current_subq = q.get('current_subquestion')

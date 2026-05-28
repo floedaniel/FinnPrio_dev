@@ -112,6 +112,7 @@ server <- function(input, output, session) {
     withProgress({
       setProgress(.1)
       consql <<- dbConnect(RSQLite::SQLite(), db_path())
+      dbExecute(consql, "PRAGMA foreign_keys = ON")
       # consql <- dbConnect(RSQLite::SQLite(), dbname = input$db_file$datapath)
       con(consql)
       if (!is.null(con())) {
@@ -440,11 +441,13 @@ server <- function(input, output, session) {
                                                LEFT JOIN threatenedSectors ON threatXassessment.idThrSect = threatenedSectors.idThrSect
                                                WHERE idAssessment = {as.integer(assessments$selected$idAssessment)}"))
       # Load previous answers
-      answers$main <- dbGetQuery(con(), glue("SELECT * FROM answers WHERE idAssessment = {assessments$selected$idAssessment}"))
+      answers$main <- dbGetQuery(con(), glue("SELECT * FROM answers WHERE idAssessment = {assessments$selected$idAssessment}")) |>
+        mutate(across(c(min, likely, max), ~ if_else(.x == "", NA_character_, .x)))
       answers$entry <- dbGetQuery(con(), glue("SELECT pa.*, ep.idAssessment, ep.idPathway
-                                                FROM pathwayAnswers AS pa 
+                                                FROM pathwayAnswers AS pa
                                                 LEFT JOIN entryPathways AS ep ON pa.idEntryPathway = ep.idEntryPathway
-                                                WHERE pa.idEntryPathway IN ({paste(selected_entries$idEntryPathway, collapse = ', ')})"))
+                                                WHERE pa.idEntryPathway IN ({paste(selected_entries$idEntryPathway, collapse = ', ')})")) |>
+        mutate(across(c(min, likely, max), ~ if_else(.x == "", NA_character_, .x)))
       
       updateTabsetPanel(session, "all_assessments", selected = "sel")
     }
@@ -1559,7 +1562,8 @@ server <- function(input, output, session) {
       } # end for main answers
       
     } # end if nrow resmain
-    answers$main <- dbGetQuery(con(), glue("SELECT * FROM answers WHERE idAssessment = {assessments$selected$idAssessment}"))
+    answers$main <- dbGetQuery(con(), glue("SELECT * FROM answers WHERE idAssessment = {assessments$selected$idAssessment}")) |>
+      mutate(across(c(min, likely, max), ~ if_else(.x == "", NA_character_, .x)))
 
     if (!is.null(assessments$entry)) {
       answ_ent_path <- extract_answers_entry(questions$entry, groupTag = "ENT", 
@@ -1623,9 +1627,10 @@ server <- function(input, output, session) {
         } # end if resentry
       } # end if any non null
       answers$entry <- dbGetQuery(con(), glue("SELECT pa.*, ep.idAssessment, ep.idPathway
-                                                FROM pathwayAnswers AS pa 
+                                                FROM pathwayAnswers AS pa
                                                 LEFT JOIN entryPathways AS ep ON pa.idEntryPathway = ep.idEntryPathway
-                                                WHERE pa.idEntryPathway IN ({paste(selected_entries$idEntryPathway, collapse = ', ')})"))
+                                                WHERE pa.idEntryPathway IN ({paste(selected_entries$idEntryPathway, collapse = ', ')})")) |>
+        mutate(across(c(min, likely, max), ~ if_else(.x == "", NA_character_, .x)))
     } # end if entry not null
     
     shinyalert(

@@ -10,9 +10,11 @@ library(RSQLite)
 library(jsonlite)
 
 # CONFIG - UPDATE THESE PATHS
-SPECIES_DIR <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/VKM Data/26.08.2024_lopende_oppdrag_plantehelse/Species"
-DB_PATH <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/daniel_database_2026/test_sdm.db"
-THRESHOLD <- 0.1
+SPECIES_DIR <-  "C:/Users/dafl/OneDrive - Folkehelseinstituttet/Prosjektdata - Dokumenter/VKM Data/26.08.2024_lopende_oppdrag_plantehelse/Species"
+               
+DB_PATH <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/daniel_database_2026/daniel_v009_2026-04-20T11-16-00.db"
+THRESHOLD <- 0.1                  # fallback only; JSON optimal_threshold wins
+AREA_FLOOR_PCT <- 0.1             # verdict "NO" if pct_area_suitable < this
 SDM_FOLDER <- "SDMtune_updated_2"
 
 # Norway/Sweden bounds
@@ -45,24 +47,33 @@ BIOCLIM_LABELS <- c(
   BIO19 = "Precipitation of Coldest Quarter"
 )
 
-analyze_tiff <- function(tiff_path, threshold = THRESHOLD) {
+# Compute per-region suitability stats from a continuous suitability raster.
+# Returns list(norway=..., sweden=..., tiff_path=...) or NULL on error.
+analyze_tiff <- function(tiff_path, threshold) {
   tryCatch({
     r <- rast(tiff_path)
 
-    r_nor <- crop(r, NORWAY)
-    vals_nor <- values(r_nor, na.rm = TRUE)
-    max_nor <- if(length(vals_nor) > 0) max(vals_nor) else 0
-
-    r_swe <- crop(r, SWEDEN)
-    vals_swe <- values(r_swe, na.rm = TRUE)
-    max_swe <- if(length(vals_swe) > 0) max(vals_swe) else 0
+    stats_for <- function(region_ext) {
+      r_reg <- crop(r, region_ext)
+      vals  <- values(r_reg, na.rm = TRUE)
+      if (length(vals) == 0) {
+        return(list(threshold = threshold, max_suit = 0, pct_area = 0,
+                    n_cells = 0, suitable = FALSE))
+      }
+      pct <- 100 * sum(vals >= threshold) / length(vals)
+      list(
+        threshold = threshold,
+        max_suit  = max(vals),
+        pct_area  = pct,
+        n_cells   = length(vals),
+        suitable  = pct >= AREA_FLOOR_PCT
+      )
+    }
 
     list(
-      norway_suitable = max_nor >= threshold,
-      sweden_suitable = max_swe >= threshold,
-      max_norway = max_nor,
-      max_sweden = max_swe,
-      threshold_used = threshold
+      norway    = stats_for(NORWAY),
+      sweden    = stats_for(SWEDEN),
+      tiff_path = tiff_path
     )
   }, error = function(e) {
     cat("    ERROR analyzing TIFF:", e$message, "\n")
@@ -99,89 +110,147 @@ find_png_maps <- function(sdm_folder, species_key) {
 # Null-coalescing helper
 `%||%` <- function(a, b) if (!is.null(a) && !is.na(a)) a else b
 
+# Convert a predictor variable name from model_summary.json into a display label.
+# Handles BIO* (lookup via BIOCLIM_LABELS after stripping suffix), SBIO*,
+# and generic names (underscores -> spaces).
+pretty_var_name <- function(var) {
+  bio_key <- sub("^(BIO\\d+)_.*", "\\1", var)
+  if (bio_key %in% names(BIOCLIM_LABELS)) {
+    return(paste0(BIOCLIM_LABELS[[bio_key]], " (", bio_key, ")"))
+  }
+  gsub("_", " ", var)
+}
+
 build_justification <- function(summary_json, tiff_result, sdm_folder, species_key) {
-  parts <- c()
   sp_name <- if (!is.null(summary_json)) summary_json$species %||% species_key else species_key
 
-  # 1. Intro
-  parts <- c(parts, sprintf("Species distribution model for %s.", sp_name))
-
-  # 2. Establishment potential — Norway is primary, Sweden supplementary
+  # -------- Block 1: verdict line --------
   if (!is.null(tiff_result)) {
-    thr <- tiff_result$threshold_used
-    nor_str <- sprintf("Norway (max=%.3f)", tiff_result$max_norway)
-    swe_str <- sprintf("also suitable in Sweden (max=%.3f)", tiff_result$max_sweden)
-
-    if (tiff_result$norway_suitable) {
-      extra <- if (tiff_result$sweden_suitable) paste0("; ", swe_str) else ""
-      parts <- c(parts, sprintf(
-        "Suitable habitat EXISTS in %s%s (threshold=%.3f, maxTSS binary map).",
-        nor_str, extra, thr
-      ))
+    nor <- tiff_result$norway
+    if (nor$suitable) {
+      verdict <- sprintf(
+        "Establishment in Norway: YES (%.1f%% of area suitable).",
+        nor$pct_area
+      )
     } else {
-      extra <- if (tiff_result$sweden_suitable) sprintf("; however suitable in Sweden (max=%.3f)", tiff_result$max_sweden) else ""
-      parts <- c(parts, sprintf(
-        "NO suitable habitat in Norway (max=%.3f)%s — below model threshold %.3f (maxTSS binary map).",
-        tiff_result$max_norway, extra, thr
-      ))
+      verdict <- sprintf(
+        "Establishment in Norway: NO (%.1f%% of area suitable, below %.1f%% floor).",
+        nor$pct_area, AREA_FLOOR_PCT
+      )
     }
   } else {
-    parts <- c(parts, "Raster analysis not available (current_clamped TIFF not found).")
+    verdict <- "Establishment in Norway: UNKNOWN (raster analysis unavailable)."
   }
 
-  # 3. Future projections
-  if (!is.null(summary_json$ssp585_mean_change)) {
-    mean_chg  <- summary_json$ssp585_mean_change
-    gain_pct  <- summary_json$ssp585_gain_pct
-    loss_pct  <- summary_json$ssp585_loss_pct
-    direction <- if (mean_chg > 0) "increase" else "decrease"
-    parts <- c(parts, sprintf(
-      "Future projections (SSP585 2021-2040): mean suitability change = %.4f (%s); %.1f%% gaining, %.1f%% losing.",
-      mean_chg, direction, gain_pct %||% NA, loss_pct %||% NA
-    ))
-  }
+  # -------- Block 2: narrative paragraph --------
+  sentences <- c()
 
-  # 4. Predictors + performance + data
+  # Sentence 1: model + species + data
   if (!is.null(summary_json)) {
+    sentences <- c(sentences, sprintf(
+      "MaxEnt species distribution model for %s (n=%d presences, %d background points).",
+      sp_name,
+      summary_json$n_presence %||% 0,
+      summary_json$n_background %||% 0
+    ))
+  } else {
+    sentences <- c(sentences, sprintf("MaxEnt species distribution model for %s.", sp_name))
+  }
+
+  # Sentences 2-3: Norway + Sweden numbers
+  if (!is.null(tiff_result)) {
+    nor <- tiff_result$norway
+    swe <- tiff_result$sweden
+
+    sentences <- c(sentences, sprintf(
+      "Approximately %.1f%% of Norwegian land area exceeds the maxTSS-optimized suitability threshold (%.3f) under the clamped current-climate projection (max cell suitability = %.3f).",
+      nor$pct_area, nor$threshold, nor$max_suit
+    ))
+
+    delta <- swe$pct_area - nor$pct_area
+    comparator <- if (delta > 2) "broader"
+                  else if (delta < -2) "narrower"
+                  else "comparable"
+    trailing <- if (delta > 2) "consistent with a northward establishment gradient"
+                else if (delta < -2) "suggesting a limited Fennoscandian range relative to Norway"
+                else "indicating similar suitability across southern Fennoscandia"
+
+    sentences <- c(sentences, sprintf(
+      "Sweden shows %s suitability (%.1f%%), %s.",
+      comparator, swe$pct_area, trailing
+    ))
+  } else {
+    sentences <- c(sentences, "Raster analysis unavailable (current_clamped TIFF not found).")
+  }
+
+  # Sentence 4: model performance
+  if (!is.null(summary_json)) {
+    perf <- c()
+    if (!is.null(summary_json$auc_test))    perf <- c(perf, sprintf("AUC(test)=%.3f", summary_json$auc_test))
+    if (!is.null(summary_json$tss_test))    perf <- c(perf, sprintf("TSS=%.3f",       summary_json$tss_test))
+    if (!is.null(summary_json$boyce_index)) perf <- c(perf, sprintf("Boyce=%.3f",     summary_json$boyce_index))
+    if (length(perf) > 0) {
+      sentences <- c(sentences, sprintf("Model performance: %s.", paste(perf, collapse = ", ")))
+    }
+  }
+
+  # Sentence 5: top 3 predictors
+  if (!is.null(summary_json) && !is.null(summary_json$variables)) {
     vars <- summary_json$variables
     imp  <- summary_json$variable_importance
-    var_str <- if (!is.null(vars)) {
-      labels <- BIOCLIM_LABELS[toupper(vars)]
-      named  <- ifelse(is.na(labels), vars, paste0(labels, " (", vars, ")"))
-      if (!is.null(imp)) named <- paste0(named, " ", round(imp, 1), "%")
-      paste(named, collapse = ", ")
-    } else {
-      "not reported"
+    n_top <- min(3, length(vars))
+    top_parts <- character(n_top)
+    for (i in seq_len(n_top)) {
+      label <- pretty_var_name(vars[i])
+      top_parts[i] <- if (!is.null(imp) && length(imp) >= i) {
+        sprintf("%s (%.1f%%)", label, imp[i])
+      } else {
+        label
+      }
     }
+    sentences <- c(sentences, sprintf("Key predictors: %s.", paste(top_parts, collapse = ", ")))
+  }
 
-    perf_parts <- c()
-    if (!is.null(summary_json$auc_test))    perf_parts <- c(perf_parts, sprintf("AUC(test)=%.3f",   summary_json$auc_test))
-    if (!is.null(summary_json$tss_test))    perf_parts <- c(perf_parts, sprintf("TSS(test)=%.3f",   summary_json$tss_test))
-    if (!is.null(summary_json$auc_cv))      perf_parts <- c(perf_parts, sprintf("AUC(CV)=%.3f",     summary_json$auc_cv))
-    if (!is.null(summary_json$boyce_index)) perf_parts <- c(perf_parts, sprintf("Boyce=%.3f",       summary_json$boyce_index))
-
-    perf_str <- if (length(perf_parts) > 0) paste(perf_parts, collapse = ", ") else ""
-    data_str <- sprintf("using %d presences and %d background points",
-                        summary_json$n_presence %||% 0, summary_json$n_background %||% 0)
-
-    mess_str <- if (!is.null(summary_json$mess_pct_extrapolation))
-      sprintf("; MESS extrapolation %.1f%%", summary_json$mess_pct_extrapolation) else ""
-
-    parts <- c(parts, sprintf(
-      "Key predictors: %s. Model performance: %s %s%s.",
-      var_str, perf_str, data_str, mess_str
+  # Sentence 6: SSP585 future
+  if (!is.null(summary_json) && !is.null(summary_json$ssp585_mean_change)) {
+    sentences <- c(sentences, sprintf(
+      "Future projections (SSP585 2021-2040): mean suitability change = %+.4f (%.1f%% gaining, %.1f%% losing).",
+      summary_json$ssp585_mean_change,
+      summary_json$ssp585_gain_pct %||% NA_real_,
+      summary_json$ssp585_loss_pct %||% NA_real_
     ))
   }
 
-  # --- PNG map references ---
-  pngs <- find_png_maps(sdm_folder, species_key)
-  if (length(pngs) > 0) {
-    parts <- c(parts, paste0("Maps: ", paste(basename(pngs), collapse = "; "), "."))
+  # Sentence 7: MESS caveat (only if extrapolation high)
+  if (!is.null(summary_json) &&
+      !is.null(summary_json$mess_pct_extrapolation) &&
+      summary_json$mess_pct_extrapolation > 50) {
+    sentences <- c(sentences, sprintf(
+      "MESS analysis flags %.1f%% of the projection area as climatically novel relative to training data - interpret Norwegian projections with caution.",
+      summary_json$mess_pct_extrapolation
+    ))
   }
 
-  parts <- c(parts, sprintf("[Model folder: %s]", sdm_folder))
+  # Fallback if JSON missing entirely
+  if (is.null(summary_json)) {
+    sentences <- c(sentences, "Model summary JSON not found; only raster-based suitability was computed.")
+  }
 
-  paste(parts, collapse = " ")
+  narrative <- paste(sentences, collapse = " ")
+
+  # -------- Block 3: PNG maps --------
+  pngs <- find_png_maps(sdm_folder, species_key)
+  maps_block <- if (length(pngs) > 0) {
+    paste0("Maps: ", paste(basename(pngs), collapse = "; "), ".")
+  } else {
+    NULL
+  }
+
+  # -------- Closing tag --------
+  closing <- sprintf("[Source: VKM SDMtune/MaxEnt, folder: %s/]", SDM_FOLDER)
+
+  blocks <- c(verdict, narrative, maps_block, closing)
+  paste(blocks[!is.null(blocks) & nzchar(blocks)], collapse = "\n\n")
 }
 
 update_db <- function(db_path, id_assessment, justification) {
@@ -196,12 +265,16 @@ update_db <- function(db_path, id_assessment, justification) {
     existing <- est1$justification[1]
     if (is.na(existing)) existing <- ""
 
-    if (grepl("MaxEnt/SDMtune", existing) || grepl("Maxent model", existing)) {
-      new_just <- sub("\n\n(MaxEnt/SDMtune|Maxent model)\n.*$", "", existing)
-      new_just <- paste0(new_just, "\n\n", justification)
-    } else {
-      new_just <- paste0(existing, "\n\n", justification)
-    }
+    # Strip new-format block (idempotent re-run)
+    stripped <- sub(
+      "\\n*Establishment in Norway:.*\\[Source: VKM SDMtune/MaxEnt[^\\]]*\\]",
+      "", existing, perl = TRUE
+    )
+    # Strip legacy markers from earlier script versions
+    stripped <- sub("\\n\\n(MaxEnt/SDMtune|Maxent model)\\n.*$", "", stripped, perl = TRUE)
+    stripped <- sub("\\s+$", "", stripped)
+
+    new_just <- if (nzchar(stripped)) paste0(stripped, "\n\n", justification) else justification
 
     dbExecute(con, "UPDATE answers SET justification = ? WHERE idAnswer = ?",
               params = list(new_just, est1$idAnswer[1]))
@@ -252,8 +325,8 @@ for (i in 1:nrow(pests)) {
   if (!pest$eppoCode %in% names(sdm_folder_map)) {
     cat("  No", SDM_FOLDER, "folder found\n\n")
     justification <- sprintf(
-      "No SDMtune_updated_2 model folder exists for this species (%s). [Source: VKM SDMtune/MaxEnt]",
-      pest$eppoCode
+      "No %s model folder exists for this species (%s). [Source: VKM SDMtune/MaxEnt]",
+      SDM_FOLDER, pest$eppoCode
     )
     update_db(output_db, pest$idAssessment, justification)
     next
@@ -290,12 +363,14 @@ for (i in 1:nrow(pests)) {
 
   # Report
   if (!is.null(tiff_result)) {
-    if (tiff_result$norway_suitable || tiff_result$sweden_suitable) {
-      cat("  SUITABLE HABITAT detected\n\n")
-    } else {
-      cat(sprintf("  No suitable habitat (Norway: %.3f  Sweden: %.3f)\n\n",
-                  tiff_result$max_norway, tiff_result$max_sweden))
-    }
+    nor <- tiff_result$norway
+    swe <- tiff_result$sweden
+    cat(sprintf("  Norway: %.1f%% suitable (max=%.3f, thr=%.3f) -> %s\n",
+                nor$pct_area, nor$max_suit, nor$threshold,
+                if (nor$suitable) "YES" else "NO"))
+    cat(sprintf("  Sweden: %.1f%% suitable (max=%.3f) -> %s\n\n",
+                swe$pct_area, swe$max_suit,
+                if (swe$suitable) "YES" else "NO"))
   } else {
     cat("  No TIFF found for raster analysis\n\n")
   }

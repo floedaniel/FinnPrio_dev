@@ -207,6 +207,7 @@ Already established in Scandinavia or regions closely matching Norwegian conditi
 - Norway has: warm humid oceanic coastal climate (Cfb/Cfc), nemoral/temperate southeastern lowlands, hemiboreal transitional zones, and boreal to subarctic climates inland and north
 - Pests restricted to warm-temperate, Mediterranean, subtropical or tropical climates are generally unlikely to establish outdoors
 - If establishment depends on vector species not present, base answer on the organism with less suitable conditions
+- If a MaxEnt/SDM model result is present in the justification and it contradicts the literature-based conclusion (e.g. literature says "no" but the model shows suitable area, or vice versa), increase uncertainty by spreading min and max across the full range of plausible options. For example, if the literature concludes "a" (no establishment) but the SDM shows 10-20% suitable area, set min=a but increase max to b or c to reflect the model-based uncertainty. The likely value should reflect whichever evidence source you judge more reliable, but the spread must capture the disagreement.
 
 ---
 
@@ -329,14 +330,14 @@ Do NOT take into account:
 
 ---
 
-## IMP 2.1: Would the pest cause the following indirect economic impacts in the PRA area?
+## IMP 2.1. Would the pest impact foreign trade?
 
 ### Options
 **IMP2.1. Would the pest impact foreign trade?**
 
 ### Guidance
 
-- This is a boolean question with sub-questions answered yes or no.
+- This is a boolean question  answered yes or no.
 - Consider only host plants threatened in EST1 and EST2. If spread depends on vector, consider vector's effect.
 
 Significant impact means:
@@ -352,17 +353,20 @@ Do NOT take into account:
 
 ---
 
-## IMP 2.2: Would the pest cause the following indirect economic impacts in the PRA area?
+## IMP 2.2. Is the pest a vector for other pests?
 
 ### Options
-**IMP2.2. Is the pest a vector for other pests?**
+**Yes**
+Yes the pest a vector for other pests
+**No**
+No the pest a not a vector for other pests
 
 ### Guidance
-- This is a boolean question with sub-questions answered yes or no.
+- This is a boolean question  answered yes or no.
 
 ---
 
-## IMP 2.3: Would the pest cause the following indirect economic impacts in the PRA area?
+## IMP 2.3. Would the pest have a significant impact on the profitability of a plant production sector?
 
 ### Options
 **IMP2.3. Would the pest have a significant impact on the profitability of a plant production sector?**
@@ -408,25 +412,42 @@ Damage could cause extinction or significant decrease of host species, or cause 
 
 ---
 
-## IMP4. Would the pest have the following environmental or social impacts in the PRA area?
+## IMP 4.1. Would the pest cause social impacts in the PRA area?
 
-This is a boolean question with sub-questions answered yes or no.
-
-### Sub-questions
-
-**IMP4.1. Social impacts**
-Impacts on amount or quality of food, construction materials and other goods gathered from nature (excluding aesthetic and cultural impacts).
-
-**IMP4.2. Significant aesthetic impacts**
-Negative effect on visual perception of gardens, urban areas or landscapes (e.g., Dutch elm disease, horse chestnut leaf miner).
-
-**IMP4.3. An impact on plants which have an important, recognized position in the culture**
-Traditional food plants (e.g., potato), plants in folktales and mythology (e.g., ash in Nordic mythology), plants with symbolic values (e.g., provincial flowers).
+### Options
+**IMP4.1. Would the pest cause social impacts in the PRA area?**
 
 ### Guidance
+- This is a boolean question answered yes or no.
+- Social impacts include effects on amount or quality of food, construction materials and other goods gathered from nature (excluding aesthetic and cultural impacts).
+- Consider only host plants threatened in EST1 and EST2.
+- If spread depends on vector, consider vector's effect on these impacts.
 
-- Consider only hosts threatened in EST1 and EST2
-- If spread depends on vector, consider vector's effect on these impacts
+---
+
+## IMP 4.2. Would the pest cause significant aesthetic impacts in the PRA area?
+
+### Options
+**IMP4.2. Would the pest cause significant aesthetic impacts in the PRA area?**
+
+### Guidance
+- This is a boolean question answered yes or no.
+- Aesthetic impacts include negative effects on visual perception of gardens, urban areas or landscapes (e.g., Dutch elm disease, horse chestnut leaf miner).
+- Consider only host plants threatened in EST1 and EST2.
+- If spread depends on vector, consider vector's effect on these impacts.
+
+---
+
+## IMP 4.3. Would the pest impact plants which have an important, recognized position in the culture?
+
+### Options
+**IMP4.3. Would the pest impact plants which have an important, recognized position in the culture?**
+
+### Guidance
+- This is a boolean question answered yes or no.
+- Culturally important plants include traditional food plants (e.g., potato), plants in folktales and mythology (e.g., ash in Nordic mythology), and plants with symbolic values (e.g., provincial flowers).
+- Consider only host plants threatened in EST1 and EST2.
+- If spread depends on vector, consider vector's effect on these impacts.
 
 ---
 
@@ -440,14 +461,8 @@ Current distribution is too far from the PRA area for natural spread to occur.
 **b. It can, but it is unlikely or very unlikely**
 Present in Europe but not in neighboring countries, range recently expanded naturally.
 
-**c. It can, but it is very unlikely**
+**c. It can, and it is likely or very likely**
 Present in neighboring countries but range has remained unchanged for a long time.
-
-**d. It can, and it is likely or very likely**
-Current range is close to PRA area and range has recently expanded naturally.
-
-**e. It can, and it is very likely**
-Has expanded naturally and already arrived in vicinity of PRA area.
 
 ### Guidance
 
