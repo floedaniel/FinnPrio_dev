@@ -48,8 +48,28 @@ def test_reporting_index_for_xylefa_returns_sorted_items():
     print(f"PASS  reporting index returned {len(items)} items, sorted desc")
 
 
+def test_search_returns_reporting_results_with_bodies():
+    os.environ["EPPO_CODE"] = "XYLEFA"
+    # Force cache reset for repeatable runs
+    from eppo_gd_retriever import _CACHE
+    _CACHE.clear()
+    r = EPPOGDSearch("any query")
+    results = r.search(max_results=5)
+    assert len(results) > 0, "expected >0 results for XYLEFA"
+    assert len(results) <= 5
+    for res in results:
+        assert set(res.keys()) >= {"url", "raw_content", "title"}, res.keys()
+        assert res["url"].startswith("https://"), res["url"]
+        assert isinstance(res["title"], str) and res["title"], res["title"]
+        # raw_content should include the title and at least some body text
+        assert "Title:" in res["raw_content"], res["raw_content"][:200]
+        assert len(res["raw_content"]) > 60, len(res["raw_content"])
+    print(f"PASS  search returned {len(results)} populated reporting results")
+
+
 if __name__ == "__main__":
     test_empty_eppo_code_returns_empty_list()
     test_unset_eppo_code_explicitly_empty_string_returns_empty_list()
     print("\nTask 1 smoke tests passed.")
     test_reporting_index_for_xylefa_returns_sorted_items()
+    test_search_returns_reporting_results_with_bodies()

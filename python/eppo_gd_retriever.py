@@ -84,9 +84,49 @@ class EPPOGDSearch:
         rows.sort(key=lambda r: r["year_month"], reverse=True)
         return rows[:MAX_REPORTING_ARTICLES]
 
+    def _fetch_article_body(self, url: str) -> str:
+        """Return plain-text body of a reporting article. Empty string on failure."""
+        try:
+            resp = requests.get(url, headers=_HEADERS, timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
+        except requests.RequestException as e:
+            logger.warning("EPPO GD article fetch failed for %s: %s", url, e)
+            return ""
+
+        try:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            # The article content sits inside the main content container.
+            # Strategy: take all text from the first <h2> onward, inside the
+            # primary content div if findable, else the whole document.
+            main = soup.find("div", id="content") or soup.find("main") or soup.body or soup
+            h2 = main.find("h2") if main else None
+            if h2:
+                parts: list[str] = []
+                for sib in h2.next_siblings:
+                    text = getattr(sib, "get_text", lambda **_: str(sib))(separator=" ", strip=True)
+                    if text:
+                        parts.append(text)
+                return "\n\n".join(parts).strip()
+            return main.get_text(separator=" ", strip=True) if main else ""
+        except Exception as e:
+            logger.warning("EPPO GD article parse failed for %s: %s", url, e)
+            return ""
+
     def _fetch_all(self, code: str) -> list[dict[str, Any]]:
-        # Implemented in later tasks.
-        raise NotImplementedError("Fetch logic added in Task 2")
+        results: list[dict[str, Any]] = []
+
+        reporting = self._fetch_reporting_index(code)
+        for item in reporting:
+            body = self._fetch_article_body(item["url"])
+            raw = f"Title: {item['title']}\n\n{body}" if body else f"Title: {item['title']}"
+            results.append({
+                "url": item["url"],
+                "raw_content": raw,
+                "title": item["title"],
+            })
+
+        logger.info("EPPO GD cached %d reporting articles for %s", len(results), code)
+        return results
 
 
 _REGISTERED = False
