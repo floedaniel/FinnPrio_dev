@@ -86,6 +86,29 @@ def test_search_includes_pra_links_after_reporting():
     print(f"PASS  search returned {len(reporting_results)} reporting + {len(pra_results)} PRA results")
 
 
+def test_cache_short_circuits_second_call():
+    import time
+    from eppo_gd_retriever import _CACHE
+    _CACHE.clear()
+    os.environ["EPPO_CODE"] = "XYLEFA"
+
+    r = EPPOGDSearch("any query")
+    t0 = time.monotonic()
+    first = r.search(max_results=5)
+    first_elapsed = time.monotonic() - t0
+
+    t1 = time.monotonic()
+    second = r.search(max_results=5)
+    second_elapsed = time.monotonic() - t1
+
+    assert first == second, "cached result must equal first result"
+    # Cached call must be at least 50x faster than uncached (typically >1000x)
+    assert second_elapsed * 50 < first_elapsed, (
+        f"cache not effective: first={first_elapsed:.3f}s second={second_elapsed:.3f}s"
+    )
+    print(f"PASS  cache short-circuited (first={first_elapsed:.2f}s, second={second_elapsed*1000:.1f}ms)")
+
+
 if __name__ == "__main__":
     test_empty_eppo_code_returns_empty_list()
     test_unset_eppo_code_explicitly_empty_string_returns_empty_list()
@@ -93,3 +116,4 @@ if __name__ == "__main__":
     test_reporting_index_for_xylefa_returns_sorted_items()
     test_search_returns_reporting_results_with_bodies()
     test_search_includes_pra_links_after_reporting()
+    test_cache_short_circuits_second_call()
