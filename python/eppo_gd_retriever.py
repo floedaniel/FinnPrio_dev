@@ -157,32 +157,15 @@ class EPPOGDSearch:
                     continue
                 seen.add(pra_url)
                 title = a.get_text(strip=True) or pra_url
-                body = self._fetch_pra_landing_text(pra_url) or title
                 results.append({
                     "url": pra_url,
-                    "raw_content": body,
+                    "raw_content": f"EPPO PRA Platform document: {title}\nURL: {pra_url}",
                     "title": title,
                 })
             return results
         except Exception as e:
             logger.warning("EPPO GD eppolinks parse failed for %s: %s", code, e)
             return []
-
-    def _fetch_pra_landing_text(self, url: str) -> str:
-        """Fetch a PRA Platform landing page, return visible text. Empty on failure."""
-        try:
-            resp = requests.get(url, headers=_HEADERS, timeout=REQUEST_TIMEOUT)
-            resp.raise_for_status()
-        except requests.RequestException as e:
-            logger.warning("EPPO PRA landing fetch failed for %s: %s", url, e)
-            return ""
-        try:
-            soup = BeautifulSoup(resp.text, "html.parser")
-            main = soup.find("main") or soup.body or soup
-            return main.get_text(separator=" ", strip=True) if main else ""
-        except Exception as e:
-            logger.warning("EPPO PRA landing parse failed for %s: %s", url, e)
-            return ""
 
     def _fetch_all(self, code: str) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
