@@ -1106,6 +1106,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
     assessment_info = get_assessment_info(db_path, assessment_id)
 
     if not assessment_info:
+        os.environ.pop("EPPO_CODE", None)
         print("❌ No assessment found!")
         return
 
