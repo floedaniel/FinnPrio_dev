@@ -1146,6 +1146,12 @@ server <- function(input, output, session) {
   ## Mark as finished and valid ----
   observeEvent(input$ass_finish, {
     req(answers$main)
+
+    # §4.E: capture the active pathway tab so we can restore it after the
+    # forthcoming assessments$selected mutation re-renders output$questionarie
+    # (and with it, output$questionariePath, which defaults to its first tab).
+    prev_tab <- isolate(input$pathway_tabset)
+
     if (input$ass_finish == TRUE) {
       ## Check for the main questions
       answers_df <- answers$main |> 
@@ -1230,16 +1236,29 @@ server <- function(input, output, session) {
     # reload the assessments data
     assessments$data <- dbReadTable(con(), "assessments")
     # assessments$selected <- assessments$data[input$assessments_rows_selected, ]
-    # assessments$selected <- assessments$selected |> 
+    # assessments$selected <- assessments$selected |>
     #   left_join(pests$data, by = "idPest") |>
-    #   left_join(assessors$data, by = "idAssessor") |> 
-    #   mutate(label = paste(scientificName, eppoCode, 
-    #                        paste(firstName, lastName), startDate, 
+    #   left_join(assessors$data, by = "idAssessor") |>
+    #   mutate(label = paste(scientificName, eppoCode,
+    #                        paste(firstName, lastName), startDate,
     #                        sep = "_"))
+
+    # §4.E: restore pathway tab selection after the unavoidable
+    # output$questionarie re-render driven by the assessments$selected
+    # slot mutation above. updateTabsetPanel is queued in the same flush
+    # cycle as the renderUI output, so the new tabset receives the
+    # selected = prev_tab message immediately after it is built.
+    if (!is.null(prev_tab)) {
+      updateTabsetPanel(session, "pathway_tabset", selected = prev_tab)
+    }
   }, ignoreInit = TRUE)
-  
+
   observeEvent(input$ass_valid, {
     req(answers$main)
+
+    # §4.E: same pattern as ass_finish — capture pathway tab for restore.
+    prev_tab <- isolate(input$pathway_tabset)
+
     if (input$ass_valid){
       
       if (assessments$selected$finished) {
@@ -1288,8 +1307,13 @@ server <- function(input, output, session) {
         updateCheckboxInput(session, "ass_valid", value = FALSE)
       }
     } # if not set to true, dont bother
+
+    # §4.E: restore pathway tab selection (see ass_finish for rationale).
+    if (!is.null(prev_tab)) {
+      updateTabsetPanel(session, "pathway_tabset", selected = prev_tab)
+    }
   }, ignoreInit = TRUE)
-  
+
   ## Save general information ----
   observeEvent(input$save_general, {
     
