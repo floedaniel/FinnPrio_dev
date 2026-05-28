@@ -983,6 +983,12 @@ server <- function(input, output, session) {
     req(assessments$selected)
     req(assessments$entry)
 
+    # Take a non-reactive snapshot of answers$entry. The pathway tabset
+    # must rebuild when assessments$entry changes (pathway added/removed
+    # in save_general), but NOT when save_answers writes back fresh
+    # pathwayAnswers rows. Same pattern as output$questionarie.
+    current_answers_entry <- isolate(answers$entry)
+
     tabs <- lapply(names(assessments$entry), function(x){
       tabPanel(value = x,
                title = pathways$data |>
@@ -1001,11 +1007,11 @@ server <- function(input, output, session) {
                                     questions$entry$question[1], 
                                     fromJSON(questions$entry$list[1])$opt,
                                     fromJSON(questions$entry$list[1])$text,
-                                    answers_path_2_logical(answers$entry, questions$entry)),
+                                    answers_path_2_logical(current_answers_entry, questions$entry)),
                    br(),
                    textAreaInput(glue("justENT2A_{x}"),
                                  label = "Justification",
-                                 value = answers$entry |>
+                                 value = current_answers_entry |>
                                    filter(idPathway == x, idPathQuestion == 1) |>
                                    pull(justification),
                                  width = 'auto',
@@ -1024,12 +1030,12 @@ server <- function(input, output, session) {
                                      questions$entry$question[2], 
                                      fromJSON(questions$entry$list[2])$opt,
                                      fromJSON(questions$entry$list[2])$text,
-                                     answers_path_2_logical(answers$entry, questions$entry)),
+                                     answers_path_2_logical(current_answers_entry, questions$entry)),
                    br(),
                     textAreaInput(glue("justENT2B_{x}"),
                                   label = "Justification",
-                                  value = answers$entry |> 
-                                    filter(idPathway == x, idPathQuestion == 2) |> 
+                                  value = current_answers_entry |>
+                                    filter(idPathway == x, idPathQuestion == 2) |>
                                     pull(justification),
                                   width = 'auto',
                                   height = '150px',
@@ -1047,12 +1053,12 @@ server <- function(input, output, session) {
                                      questions$entry$question[3],
                                      fromJSON(questions$entry$list[3])$opt,
                                      fromJSON(questions$entry$list[3])$text,
-                                     answers_path_2_logical(answers$entry, questions$entry)),
+                                     answers_path_2_logical(current_answers_entry, questions$entry)),
                    br(),
                     textAreaInput(glue("justENT3_{x}"),
                                   label = "Justification",
-                                  value = answers$entry |> 
-                                    filter(idPathway == x, idPathQuestion == 3) |> 
+                                  value = current_answers_entry |>
+                                    filter(idPathway == x, idPathQuestion == 3) |>
                                     pull(justification),
                                   width = 'auto',
                                   height = '150px',
@@ -1070,12 +1076,12 @@ server <- function(input, output, session) {
                                      questions$entry$question[4], 
                                      fromJSON(questions$entry$list[4])$opt,
                                      fromJSON(questions$entry$list[4])$text,
-                                     answers_path_2_logical(answers$entry, questions$entry)),
+                                     answers_path_2_logical(current_answers_entry, questions$entry)),
                    br(),
                     textAreaInput(glue("justENT4_{x}"),
                                   label = "Justification",
-                                  value = answers$entry |> 
-                                    filter(idPathway == x, idPathQuestion == 4) |> 
+                                  value = current_answers_entry |>
+                                    filter(idPathway == x, idPathQuestion == 4) |>
                                     pull(justification),
                                   width = 'auto',
                                   height = '150px',
