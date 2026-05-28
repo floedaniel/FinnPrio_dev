@@ -1275,15 +1275,23 @@ server <- function(input, output, session) {
             showConfirmButton = TRUE, showCancelButton = TRUE,
             confirmButtonText = "YES", cancelButtonText = "NO",  
             timer = 0, animation = TRUE,
-            callbackR = function(value) { 
+            callbackR = function(value) {
               if (value) {
                 dbExecute(con(), "UPDATE assessments SET valid = ? WHERE idAssessment = ?",
                           params = list(0, others$idAssessment))
-                
+
                 dbExecute(con(), "UPDATE assessments SET valid = ? WHERE idAssessment = ?",
                           params = list(as.integer(input$ass_valid),
                                         assessments$selected$idAssessment))
                 assessments$selected$valid <- as.integer(input$ass_valid)
+                # §4.E (callback): the slot mutation above triggers an async
+                # output$questionarie re-render. The synchronous restore at
+                # the end of the enclosing observer body fires BEFORE this
+                # callback runs and is therefore a no-op for this path —
+                # restore again here. prev_tab is captured by closure.
+                if (!is.null(prev_tab)) {
+                  updateTabsetPanel(session, "pathway_tabset", selected = prev_tab)
+                }
               }})  # END if Value, callback, shinyAlert
           
           
