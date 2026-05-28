@@ -681,16 +681,24 @@ server <- function(input, output, session) {
   ## Questionaries ----
   output$questionarie <- renderUI({
     req(questions$main)
-    req(answers$main)
-    # req(assessments$selected)
     req(input$assessments_rows_selected)
-    
+
+    # Take a non-reactive snapshot of answers$main. Mastering Shiny Ch. 10
+    # pattern: this renderUI must re-run when the user picks a different
+    # assessment (assessments$selected dependency stays live), but NOT when
+    # save_answers writes back to answers$main after a DB UPSERT. The save
+    # handler still refreshes answers$main for downstream consumers
+    # (validation, simulation, report); those readers do NOT isolate and
+    # therefore continue to see fresh DB state.
+    current_answers_main <- isolate(answers$main)
+    req(current_answers_main)
+
     quesEnt <- questions$main |> filter(group == "ENT") |> arrange(number)
     quesEst <- questions$main |> filter(group == "EST") |> arrange(number)
     quesImp <- questions$main |> filter(group == "IMP") |> arrange(number)
     quesMan <- questions$main |> filter(group == "MAN") |> arrange(number)
-    
-    answers_logical <- answers_2_logical(answers$main, questions$main)
+
+    answers_logical <- answers_2_logical(current_answers_main, questions$main)
     
     if(is.null(assessments$selected)){
       ui <- NULL
@@ -709,7 +717,7 @@ server <- function(input, output, session) {
                               options <- quesEnt$list[x]
                               id <- quesEnt$number[x]
                               info <- quesEnt$info[x]
-                              just <- answers$main |>
+                              just <- current_answers_main |>
                                 filter(idQuestion == quesEnt$idQuestion[x]) |>
                                 pull(justification)
                               tagList(
@@ -754,8 +762,8 @@ server <- function(input, output, session) {
                             options <- quesEst$list[x]
                             id <- quesEst$number[x]
                             info <- quesEst$info[x]
-                            just <- answers$main |> 
-                              filter(idQuestion == quesEst$idQuestion[x]) |> 
+                            just <- current_answers_main |>
+                              filter(idQuestion == quesEst$idQuestion[x]) |>
                               pull(justification)
                             tagList(
                               div(class = "flex-row",
@@ -794,8 +802,8 @@ server <- function(input, output, session) {
                             options <- quesImp$list[x]
                             id <- quesImp$number[x]
                             info <- quesImp$info[x]
-                            just <- answers$main |> 
-                              filter(idQuestion == quesImp$idQuestion[x]) |> 
+                            just <- current_answers_main |>
+                              filter(idQuestion == quesImp$idQuestion[x]) |>
                               pull(justification)
                             type <- quesImp$type[x]
                             tagList(
@@ -835,8 +843,8 @@ server <- function(input, output, session) {
                             options <- quesMan$list[x]
                             id <- quesMan$number[x]
                             info <- quesMan$info[x]
-                            just <- answers$main |> 
-                              filter(idQuestion == quesMan$idQuestion[x]) |> 
+                            just <- current_answers_main |>
+                              filter(idQuestion == quesMan$idQuestion[x]) |>
                               pull(justification)
                             sub <- quesMan$subgroup[x]
                             tagList(
