@@ -67,9 +67,29 @@ def test_search_returns_reporting_results_with_bodies():
     print(f"PASS  search returned {len(results)} populated reporting results")
 
 
+def test_search_includes_pra_links_after_reporting():
+    os.environ["EPPO_CODE"] = "XYLEFA"
+    from eppo_gd_retriever import _CACHE
+    _CACHE.clear()
+    r = EPPOGDSearch("any query")
+    results = r.search(max_results=50)  # large cap to capture all PRA links
+    pra_results = [x for x in results if "pra.eppo.int/pra/" in x["url"]]
+    reporting_results = [x for x in results if "gd.eppo.int/reporting/article-" in x["url"]]
+    assert len(pra_results) > 0, "expected >=1 PRA link for XYLEFA"
+    # Ordering invariant: PRA results come AFTER reporting results in the list
+    if reporting_results and pra_results:
+        last_reporting_idx = max(results.index(x) for x in reporting_results)
+        first_pra_idx = min(results.index(x) for x in pra_results)
+        assert last_reporting_idx < first_pra_idx, "PRA results must appear after reporting"
+    for p in pra_results:
+        assert p["raw_content"], "PRA raw_content must not be empty (title fallback at minimum)"
+    print(f"PASS  search returned {len(reporting_results)} reporting + {len(pra_results)} PRA results")
+
+
 if __name__ == "__main__":
     test_empty_eppo_code_returns_empty_list()
     test_unset_eppo_code_explicitly_empty_string_returns_empty_list()
     print("\nTask 1 smoke tests passed.")
     test_reporting_index_for_xylefa_returns_sorted_items()
     test_search_returns_reporting_results_with_bodies()
+    test_search_includes_pra_links_after_reporting()

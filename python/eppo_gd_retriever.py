@@ -44,6 +44,7 @@ class EPPOGDSearch:
         return _CACHE[code][:max_results]
 
     _ARTICLE_HREF_RE = re.compile(r"^/reporting/article-(\d+)")
+    _PRA_HREF_RE = re.compile(r"^https?://pra\.eppo\.int/pra/[0-9a-fA-F\-]+")
 
     def _fetch_reporting_index(self, code: str) -> list[dict[str, Any]]:
         """Return reporting articles for `code`, sorted by year_month desc, capped."""
@@ -112,6 +113,77 @@ class EPPOGDSearch:
             logger.warning("EPPO GD article parse failed for %s: %s", url, e)
             return ""
 
+    def _fetch_pra_links(self, code: str) -> list[dict[str, Any]]:
+        """Return EPPO PRA Platform links for `code`, each with a body."""
+        url = f"https://gd.eppo.int/taxon/{code}/eppolinks"
+        try:
+            resp = requests.get(url, headers=_HEADERS, timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
+        except requests.RequestException as e:
+            logger.warning("EPPO GD eppolinks fetch failed for %s: %s", code, e)
+            return []
+
+        try:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            # Find the section whose heading mentions "EPPO PRA Platform".
+            # The page uses <div class="process-meta"><span>Found in EPPO PRA
+            # Platform</span></div> rather than a conventional h2/h3/h4, so we
+            # search all tags and then walk up to the nearest ancestor that
+            # actually contains pra.eppo.int anchors.
+            section_root = None
+            for tag in soup.find_all(True):
+                if "EPPO PRA Platform" in tag.get_text(strip=True):
+                    # Walk up until we find a container that holds PRA links.
+                    candidate = tag
+                    while candidate is not None:
+                        if candidate.find("a", href=self._PRA_HREF_RE):
+                            section_root = candidate
+                            break
+                        candidate = candidate.parent
+                    if section_root is not None:
+                        break
+            if section_root is None:
+                return []
+
+            pra_anchors = [
+                a for a in section_root.find_all("a", href=True)
+                if self._PRA_HREF_RE.match(a["href"])
+            ]
+            results: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for a in pra_anchors:
+                pra_url = a["href"]
+                if pra_url in seen:
+                    continue
+                seen.add(pra_url)
+                title = a.get_text(strip=True) or pra_url
+                body = self._fetch_pra_landing_text(pra_url) or title
+                results.append({
+                    "url": pra_url,
+                    "raw_content": body,
+                    "title": title,
+                })
+            return results
+        except Exception as e:
+            logger.warning("EPPO GD eppolinks parse failed for %s: %s", code, e)
+            return []
+
+    def _fetch_pra_landing_text(self, url: str) -> str:
+        """Fetch a PRA Platform landing page, return visible text. Empty on failure."""
+        try:
+            resp = requests.get(url, headers=_HEADERS, timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
+        except requests.RequestException as e:
+            logger.warning("EPPO PRA landing fetch failed for %s: %s", url, e)
+            return ""
+        try:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            main = soup.find("main") or soup.body or soup
+            return main.get_text(separator=" ", strip=True) if main else ""
+        except Exception as e:
+            logger.warning("EPPO PRA landing parse failed for %s: %s", url, e)
+            return ""
+
     def _fetch_all(self, code: str) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
 
@@ -125,7 +197,13 @@ class EPPOGDSearch:
                 "title": item["title"],
             })
 
-        logger.info("EPPO GD cached %d reporting articles for %s", len(results), code)
+        pra_results = self._fetch_pra_links(code)
+        results.extend(pra_results)
+
+        logger.info(
+            "EPPO GD cached %d reporting + %d PRA results for %s",
+            len(reporting), len(pra_results), code,
+        )
         return results
 
 
