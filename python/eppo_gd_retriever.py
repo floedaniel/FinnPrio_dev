@@ -59,10 +59,7 @@ class EPPOGDSearch:
             soup = BeautifulSoup(resp.text, "html.parser")
             rows: list[dict[str, Any]] = []
             for a in soup.find_all("a", href=self._ARTICLE_HREF_RE):
-                m = self._ARTICLE_HREF_RE.match(a.get("href", ""))
-                if not m:
-                    continue
-                article_id = m.group(1)
+                article_id = self._ARTICLE_HREF_RE.match(a["href"]).group(1)
                 title = a.get_text(strip=True)
                 # The year-month sits in a sibling cell on the same row.
                 tr = a.find_parent("tr")

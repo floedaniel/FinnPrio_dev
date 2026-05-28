@@ -33,7 +33,6 @@ def test_reporting_index_for_xylefa_returns_sorted_items():
     (well-populated species with many reporting articles)."""
     from eppo_gd_retriever import EPPOGDSearch, MAX_REPORTING_ARTICLES
 
-    os.environ["EPPO_CODE"] = "XYLEFA"
     r = EPPOGDSearch("any query")
     items = r._fetch_reporting_index("XYLEFA")
     assert isinstance(items, list), f"expected list, got {type(items)}"
