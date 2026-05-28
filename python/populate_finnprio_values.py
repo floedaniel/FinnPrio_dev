@@ -24,7 +24,7 @@ import openai
 from openai import AsyncOpenAI
 
 # Import instructions loader for value selection prompts
-from instructions_loader import build_value_selection_prompt
+from instructions_loader import build_value_selection_prompt, get_question_instructions
 
 ################################################################################
 # CONFIGURATION - EDIT THESE SETTINGS
@@ -32,10 +32,10 @@ from instructions_loader import build_value_selection_prompt
 
 # Skip Existing Values
 # Set to False to overwrite existing values, True to skip answers that already have values
-SKIP_EXISTING_VALUES = False
+SKIP_EXISTING_VALUES = True
 
 # API Keys - Read from files
-OPENAI_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\chatgpt_apikey.txt"
+OPENAI_API_KEY_FILE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\API keys\tore_vkm_openai.txt"
 TAVILY_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\Tavily_key.txt"
 
 # Load API keys from files
@@ -55,8 +55,7 @@ os.environ['TAVILY_API_KEY'] = load_api_key(TAVILY_API_KEY_FILE)
 #
 # OPTION 1: Manual path (uncomment and edit the line below)
 # INPUT_DATABASE = None
-INPUT_DATABASE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel_ai_enhanced_25_02_2026.db"
-# INPUT_DATABASE = r"C:/full/path/to/your/database.db"
+INPUT_DATABASE = r"C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/test databases/ai_test_db/ai_test_v004_2026-05-18T22-14-29.db"
 #
 # OPTION 2: Auto-detect (leave INPUT_DATABASE = None)
 # Automatically finds most recent *_ai_enhanced_*.db in outputs/ folder
@@ -66,7 +65,7 @@ INPUT_DATABASE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnP
 
 # Filter by EPPO codes (empty list = process all species)
 # Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
-EPPOCODES_TO_POPULATE = ["ANOLHO"]
+EPPOCODES_TO_POPULATE = [ ]
 
 # Output: Same as input (updates in place)
 # The script modifies the input database directly, adding min/likely/max values
@@ -212,16 +211,74 @@ class ValuePopulator:
             question_text: The question text (unused, kept for compatibility)
             options: List of option dicts with 'opt', 'text', 'points'
             justification: The AI-generated justification to analyze
-            question_type: 'minmax' or 'boolean' (unused, derived from question_code)
+            question_type: 'minmax' or 'boolean'
             question_code: Question code (e.g., 'ENT1') - required
 
         Returns:
             Dict with keys 'min', 'likely', 'max' containing option codes
         """
+        # Boolean sub-questions (IMP2.x, IMP4.x) each have a single YES option whose
+        # opt code varies ('a', 'b', or 'c'). Route them through a direct yes/no path
+        # rather than the min/likely/max PERT prompt.
+        if question_type == 'boolean' and options:
+            yes_code = options[0]['opt']
+            return await self._call_gpt_boolean(justification, question_code, yes_code)
+
         prompt = build_value_selection_prompt(question_code, pest_name, justification, options)
         return await self._call_gpt_for_values(prompt, options)
 
-    async def _call_gpt_for_values(self, prompt: str, options: List[Dict]) -> Dict[str, str]:
+    async def _call_gpt_boolean(self, justification: str, question_code: str, yes_code: str) -> Optional[Dict[str, str]]:
+        """Ask a simple yes/no question for boolean sub-questions (IMP2.x, IMP4.x).
+
+        Returns {min: yes_code, likely: yes_code, max: yes_code} for YES,
+                {min: None, likely: None, max: None} for NO, or None on error.
+        """
+        try:
+            q = get_question_instructions(question_code)
+            question_text = f"{q['code']}: {q['text']}"
+            guidance = q.get('guidance', [])
+        except KeyError:
+            question_text = question_code
+            guidance = []
+
+        guidance_block = (
+            "\nGUIDANCE:\n" + "\n".join(f"- {g}" for g in guidance)
+        ) if guidance else ""
+
+        prompt = (
+            f"Does the following justification indicate that this applies to the pest?\n\n"
+            f"QUESTION: {question_text}"
+            f"{guidance_block}\n\n"
+            f"JUSTIFICATION:\n{justification}\n\n"
+            f"Answer YES if the justification supports it, "
+            f"NO if it does not occur or is not mentioned.\n"
+            f'Return ONLY: {{"answer": "YES"}} or {{"answer": "NO"}}'
+        )
+
+        try:
+            response = await client.chat.completions.create(
+                model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+                messages=[
+                    {"role": "system", "content": "You are an expert in plant pest risk assessment."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.0,
+                max_tokens=20
+            )
+            content = response.choices[0].message.content.strip()
+            if "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+                if content.startswith("json"):
+                    content = content[4:].strip()
+            result = json.loads(content)
+            if result.get("answer", "").upper() == "YES":
+                return {"min": yes_code, "likely": yes_code, "max": yes_code}
+            return {"min": None, "likely": None, "max": None}
+        except Exception as e:
+            print(f"  ⚠️  Error in boolean evaluation: {type(e).__name__}: {e}")
+            return None
+
+    async def _call_gpt_for_values(self, prompt: str, options: List[Dict], _allow_retry: bool = True) -> Dict[str, str]:
         """Call GPT API with prompt and parse response."""
 
         try:
@@ -272,6 +329,16 @@ class ValuePopulator:
             for key in required_keys:
                 # Allow None/null for boolean questions (when answer is NO)
                 if values[key] is not None and values[key] not in valid_opts:
+                    if _allow_retry:
+                        valid_list = ', '.join(f'"{v}"' for v in sorted(valid_opts))
+                        retry_prompt = (
+                            f"{prompt}\n\n"
+                            f"CORRECTION: Option code '{values[key]}' is not valid. "
+                            f"Use ONLY one of these codes: {valid_list}. "
+                            f"Return ONLY the corrected JSON."
+                        )
+                        print(f"  ↩ Invalid code '{values[key]}' — retrying with valid codes: {valid_list}")
+                        return await self._call_gpt_for_values(retry_prompt, options, _allow_retry=False)
                     raise ValueError(f"Invalid option code '{values[key]}' for {key}. Valid options: {valid_opts}")
 
             return values

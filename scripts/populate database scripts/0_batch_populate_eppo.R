@@ -14,18 +14,22 @@
 # =============================================================================
 # CONFIGURATION - EDIT THESE SETTINGS
 # =============================================================================
-
+dir()
 # Database Path - THIS WILL BE USED FOR ALL POPULATE SCRIPTS
-DB_PATH <- "./databases/daniel_database_2026/test_sdm.db"
+DB_PATH <- "./databases/iben_database_2026/XYLEFA.db"
+DB_FILE <- "./databases/iben_database_2026/XYLEFA.db"
 
 # EPPO API Key File
-API_KEY_FILE <- "C:/Users/dafl/Desktop/API keys/EPPO_beta.txt"
+API_KEY_FILE <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/API keys/EPPO_beta.txt"
 
 # EPPO Codes to Populate (for script 1)
-EPPO_CODES <- c("ANOLHO", "ARGPLE", "CERTCA", "CHRBFE", "CHRBMA", "DACUDO", "DENDSU", "EPIXCU", "EPIXSU", "EPIXTU", "LAPHFR", "MALADI", "PHECPI", "RHYCFE", "XYLOCH")
+EPPO_CODES <- c("XYLEFA")
+
+# using vector from source 
+# EPPO_CODES <- v$eppocode # change source ad libitum 
 
 # Default Assessor ID (for script 2)
-DEFAULT_ASSESSOR_ID <- 1L
+DEFAULT_ASSESSOR_ID <- 3L
 
 # Only process missing data (for script 2)
 ONLY_MISSING <- TRUE
@@ -107,8 +111,13 @@ source_with_config <- function(script_name, config_vars) {
     return(TRUE)
 
   }, error = function(e) {
+    msg <- conditionMessage(e)
+    if (grepl("^No .* to process$", msg)) {
+      cat(sprintf("\n⚠️  SKIPPED: %s (%s)\n", script_name, msg))
+      return(TRUE)
+    }
     cat(sprintf("\n❌ FAILED: %s\n", script_name))
-    cat(sprintf("Error: %s\n", conditionMessage(e)))
+    cat(sprintf("Error: %s\n", msg))
     return(FALSE)
   })
 }

@@ -26,6 +26,8 @@ The unified script combines two complementary data sources:
 | Server | Purpose |
 |--------|---------|
 | `servers/eppo_mcp_server.py` | EPPO Global Database API with caching and rate limiting |
+| `ssb_mcp_server.py` | SSB Statistics Norway trade data (PxWebApi v2) — launched for ENT3 |
+| `ssb_query_lib.py` | Shared pure-function library used by `ssb_mcp_server.py` and `standalone_ssb_MPC.py` |
 
 ### Local/FREE Scripts (Ollama)
 | Script | Purpose | Cost |
@@ -619,4 +621,4 @@ For issues or questions, refer to:
 
 ---
 
-**Last Updated:** February 26, 2026
+**Last Updated:** May 19, 2026

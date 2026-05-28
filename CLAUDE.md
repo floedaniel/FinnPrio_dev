@@ -68,6 +68,14 @@ shiny::runApp()
 
 The application expects a SQLite database file to be selected on startup via the file chooser dialog.
 
+**Syntax-checking R code:** `Rscript -e "parse('server.R'); cat('OK\n')"` — parses a file without executing; use after edits to `server.R` / `ui.R` / `R/*.R` before launching `shiny::runApp()`.
+
+**No automated tests** — UI and reactive changes are verified manually via `shiny::runApp()` against a populated SQLite DB; there is no `testthat` suite. Bake manual verification into any plan that touches the Shiny app.
+
+**Branching convention:** feature branches use `feat/<slug>`, bug fixes use `fix/<slug>` (see `feat/eppo-gd-retriever`, `fix/pathway-tab-save-bug`). Branch off the current integration branch, not necessarily `master`, if the latter has unrelated uncommitted work in the tree.
+
+**Commit style:** Conventional Commits with scope — `fix(shiny):`, `fix(python):`, `feat(python):`, `docs(claude):`, `chore(python):`, `refactor(python):`. Scope = language/area, not file. Multi-line bodies via `git commit -m "$(cat <<'EOF' ... EOF)"`.
+
 ## Code Architecture
 
 ### Application Structure
@@ -76,7 +84,7 @@ The app follows the standard Shiny architecture pattern:
 
 - **global.R**: Package loading and initialization (optimized with automatic dependency management)
 - **ui.R**: User interface definition (navbar with tabs for Assessments, Pest-species data, Assessors, Instructions)
-- **server.R**: Server-side logic and reactive programming (~2100+ lines)
+- **server.R**: Server-side logic and reactive programming (~2500+ lines)
   - Includes full CRUD operations for Pests and Assessors
   - Automatic stale session unlock (5-minute timeout)
 - **R/**: Helper functions organized by purpose
@@ -208,6 +216,11 @@ Default simulation parameters: 50,000 iterations, lambda=1, weights=0.5/0.5
 
 ## Important Development Notes
 
+### Shiny reactive gotchas
+
+- **`reactiveValues` invalidates by object, not by slot**: writing to any field of a `reactiveValues` (e.g. `assessments$selected$endDate <- ...`) invalidates every reactive context that reads any field of that same `reactiveValues`. Inside `renderUI`, read save-driven reactives via `isolate()` snapshots for seed-only reads to avoid save-triggered re-renders (Mastering Shiny Ch. 10 `value <- isolate(input$dynamic)` pattern; see fix commits `3f54591..55464a5`).
+- **`tabPanel(value = x, ...)`, NOT `tabPanel(id = x, ...)`**: `tabPanel` silently ignores `id`. The active tab is identified by `value` and exposed via `input$<tabset_id>` only when the outer `tabsetPanel(id = ...)` declares an id. Required for `updateTabsetPanel()` to address tabs.
+
 ### Database Transactions
 
 Always wrap multi-step database operations in transaction logic (though not explicitly implemented in current code). When modifying entry pathways via `save_general`, the cascade deletion of pathwayAnswers is automatic due to schema constraints.
@@ -246,6 +259,8 @@ Answers store option identifiers (e.g., "a", "b", "c") not point values. Points 
 - **information/**: Documentation (README files, database diagrams)
 - **scripts/**: Utility scripts organized by function (see Script Files section below)
 - **python/**: AI enhancement scripts for generating justifications and values
+
+**Gitignored docs:** `docs/` is in `.gitignore` (originally for pkgdown sites). Design specs and implementation plans under `docs/superpowers/{specs,plans}/` are untracked by project convention — they live on disk but are not in git. Reference them by path in commit messages/PRs; do not try to commit them without a `git add -f` or a `.gitignore` exemption.
 
 **Database Selection**:
 - Selected at runtime via shinyFiles dialog
@@ -310,14 +325,17 @@ Scripts for data migration and database repairs:
 ### Populate Database Scripts (`scripts/populate database scripts/`)
 
 Scripts for bulk data population with EPPO data and master database management:
+- `0_batch_populate_eppo.R`: Batch EPPO data population across multiple databases
 - `1_populate_eppo_pests_table_db.R`: Bulk pest data import (sets default values for required fields)
 - `2_populate_eppo_assesment_host.R`: Assessment-host relationship setup
 - `3_populate_eppo_notes_datasheet.R`: Notes field population
 - `4_populate_eppo_pathwayshosts.R`: Pathway-host relationships
 - `5_populate_eppo_distribution.R`: Geographic distribution data
 - `6_sdm_populator.R`: Populates EST1 justification with Maxent SDM model results for Norway/Sweden (reads `model_summary.json` from SDMtune folders)
-- `7_populate_masterdatabase.R`: Merges all assessor `4_master` databases under a base directory into a single master database; backs up existing master with timestamp before overwriting; deduplicates assessors by name and pests by EPPO code
+- `7_populate_database.R`: Merges all assessor `4_master` databases under a base directory into a single master database; backs up existing master with timestamp before overwriting; deduplicates assessors by name and pests by EPPO code
 - `8_batch_simulation.R`: Batch runs Monte Carlo simulations for all assessments in a FinnPRIO database
+- `9_populate_plot.R`: Extracts simulation summaries from master database and produces risk matrix plots (invasion vs impact, establishment vs impact, total risk score lollipop); groups species by taxonomy (Arthropoda, Fungi, Viruses, etc.); includes diagnosis section for missing/unplotted species
+- `10_populate_master_database.R`: Merges yearly databases (`yearly copies/`) into the cumulative `master_finnprio.db` in `databases/master_database/`; deduplicates by EPPO code at **master pest ID level** — if two source pests share the same EPPO code (e.g. capitalisation variants), only the assessment with the newest simulation date is inserted (falls back to `endDate` when neither has a simulation); assessors deduplicated by firstName+lastName; after merging, safely deletes assessments with no justifications, no values, AND no simulations (all related rows removed in FK order); backs up master to `databases/master_database/backups/` before any changes
 
 ### Support Scripts (`scripts/div support scripts/`)
 
@@ -342,11 +360,22 @@ Diagnostic and troubleshooting utilities:
 Python scripts for automatically generating justifications and populating min/likely/max values using AI:
 
 **Main Scripts:**
-- `populate_finnprio_justifications.py`: Main script using GPT Researcher for web research
+- `populate_finnprio_justifications.py`: Main script using GPT Researcher for web research; ENT3 attaches the SSB MCP server for trade-volume data (trade pathways only: Seeds, Plants for planting, Wood, Food/fodder, Other living plant parts — Hitchhiking/Natural spread/Intentional introduction skip SSB); IMP1, EST2, and IMP2.2 attach the NIBIO MCP server for Norwegian agricultural production statistics
 - `populate_finnprio_justifications_mcp.py`: MCP server version with caching and persistent connection
 - `populate_finnprio_justifications_anthropic.py`: Claude (Anthropic) version with optimized prompts
 - `populate_finnprio_values.py`: Determines min/likely/max values from justifications
 - `view_justifications.py`: Utility to view generated justifications
+- `inspect_prompts.py`: Renders all LLM prompts without API calls — use for prompt review and debugging
+
+**SSB Statistics Norway integration (ENT3):**
+- `ssb_query_lib.py`: Pure SSB PxWebApi v2 helper functions (no AI SDK). Five functions: `ssb_search_tables`, `ssb_get_metadata`, `ssb_search_codes`, `ssb_query_data`, `toll_search_hs_codes`. Used by both `ssb_mcp_server.py` and `standalone_ssb_MPC.py`. Includes 8 MB response cap and 120 s wall-clock timeout.
+- `ssb_mcp_server.py`: FastMCP 3.x server exposing five tools (four SSB + `search_tariff_codes`). Launched as stdio subprocess for ENT3 on trade pathways only (`pathway_uses_ssb()` gate in `populate_finnprio_justifications.py`).
+- `standalone_ssb_MPC.py`: CLI agent for ad-hoc SSB queries (imports from `ssb_query_lib.py`).
+- `customstariffstructure.xml`: Norwegian customs tariff (English) cached locally on first use — downloaded from data.toll.no; 4.2 MB, 7 436 8-digit commodity codes. Used by `toll_search_hs_codes()` to resolve host plant keywords to exact SSB `Varekoder` before querying table 08801.
+
+**NIBIO Totalkalkylen integration (IMP1, EST2, IMP2.2):**
+- `nibio_query_lib.py`: Pure NIBIO Totalkalkylen API helper functions (no AI SDK). Three functions: `nibio_list_groups`, `nibio_list_posts`, `nibio_get_data`. Returns 68-year production time series (1959–2026) with kvantum (Tonn), pris (Kr/100 kg), verdi (1000 kr).
+- `nibio_mcp_server.py`: FastMCP 3.x server exposing three tools (`list_groups`, `list_posts`, `get_data`). Launched as stdio subprocess for IMP1, EST2, and IMP2.2 regular questions. Key groups: 2606=Korn, 2607=Poteter, 2608=Hagebruksprodukter, 2641=Jordbruksareal (daa by crop type).
 
 **Instructions System (v2.0):**
 - `parse_rmd_instructions.py`: Parses Rmd to structured JSON with options and guidance
@@ -364,6 +393,14 @@ The instructions system loads question-specific guidance from `information/Instr
 
 See `python/README.md` for detailed documentation and `python/CHANGELOG.md` for version history.
 
+**SSB MCP gotchas** (relevant to ENT3 in `populate_finnprio_justifications.py`):
+- `build_ent3_mcp_configs()` uses `sys.executable` (not `"python"`) so the subprocess inherits the venv — do NOT pass `env: {}` (strips subprocess environment, wrong FastMCP version)
+- `RETRIEVER` is temporarily set to `"tavily,mcp"` for MCP questions only, restored in `finally`; `MCP_AUTO_TOOL_SELECTION=true` enables tool discovery
+- `mcp_strategy="fast"` runs MCP once for the main query; suits both ENT3 (single-shot trade lookup) and NIBIO (chained group→post→data calls within the same session)
+- SSB `query_data` caps at 8 MB / 120 s wall clock / 500 non-zero rows — if SSB returns an error JSON the pipeline logs a warning and continues
+- `SSB_PATHWAYS` set in `populate_finnprio_justifications.py` gates SSB activation: keywords `"seeds"`, `"plants for planting"`, `"wood"`, `"food"`, `"fodder"`, `"living plant"` — Hitchhiking, Natural spread, Intentional introduction never trigger SSB
+- `toll_search_hs_codes()` downloads `customstariffstructure.xml` on first call and caches it in `python/`; subsequent calls use the in-memory index — no re-download during a pipeline run
+
 **`gpt_researcher` API gotchas** (relevant to `Populate_finprio_justifications_deep.py`):
 - `Tone` enum: `from gpt_researcher.utils.enum import Tone`
 - `report_source` takes a string literal: `"web"` / `"local"` / `"hybrid"`
@@ -375,11 +412,4 @@ See `python/README.md` for detailed documentation and `python/CHANGELOG.md` for 
 
 ## Recent Updates
 
-For detailed changelog of all updates, features, bug fixes, and improvements, see **CHANGELOG.md**.
-
-**Latest major updates:**
-- **February 2026**: Instructions System v2.0 - Restructured Rmd file with `### Options` and `### Guidance` sections, explicit km²/ha/kg thresholds, updated parser and loader for cleaner AI prompts
-- **February 2026**: Python folder cleanup - renamed scripts (`populate_finnprio_justifications.py`, `populate_finnprio_justifications_mcp.py`), removed 22 unnecessary files, added MCP server version with caching
-- **February 2026**: Complete UI/UX overhaul with CSS rebuild (v36.0 → v37.3), color-coded sections, enhanced typography, prominent justification boxes, and 8-color pathway tabs
-- **February 2026**: Project restructuring with organized folder structure and cross-platform compatibility
-- **January 2026**: Full CRUD operations for Pests and Assessors, data validation, database locking improvements, and code quality enhancements
+See **CHANGELOG.md** for the full release log (Added / Changed / Fixed by month). The most recent fix branches and commit SHAs are referenced from inside the relevant CHANGELOG entries.

@@ -15,9 +15,267 @@ Key features:
 
 import os
 import asyncio
+import hashlib
 import sqlite3
 import shutil
 from pathlib import Path
+
+# Monkey-patch gpt-researcher's PDF loader BEFORE importing GPTResearcher.
+# gpt-researcher's default DocumentLoader uses PyMuPDFLoader (native C extension
+# via pymupdf/fitz), which crashes the process with a native access violation
+# (0xC0000005 on Windows) when it encounters certain malformed PDFs — the crash
+# bypasses Python's try/except entirely. PyPDFLoader uses pypdf (pure Python) and
+# handles malformed PDFs gracefully. See gpt_researcher/document/document.py:67.
+#
+# We also:
+#   1. Add a progress counter so the user can see PDF loading activity
+#   2. Cache the loaded document set per doc_path, so all 18 questions in one
+#      assessment reuse the same parsed PDFs instead of re-parsing 18 times.
+import time as _time
+from langchain_community.document_loaders import PyPDFLoader
+import gpt_researcher.document.document as _gpt_doc
+
+_gpt_doc.PyMuPDFLoader = PyPDFLoader
+
+# Progress counter shared across all _load_document calls within a single load()
+_load_progress = {"done": 0, "total": 0, "last_print": 0.0}
+
+# Persistent log of files currently being loaded + known-bad files.
+# On a native crash (0xC0000005), the last "LOADING:" line in the log
+# identifies the culprit PDF. Files listed in _BAD_FILES_PATH are skipped.
+_SCRIPT_DIR = Path(__file__).parent
+_LOAD_LOG_PATH = _SCRIPT_DIR / ".pdf_load_log.txt"
+_BAD_FILES_PATH = _SCRIPT_DIR / ".pdf_bad_files.txt"
+
+def _get_bad_files():
+    if not _BAD_FILES_PATH.exists():
+        return set()
+    return {line.strip() for line in _BAD_FILES_PATH.read_text(encoding="utf-8").splitlines() if line.strip()}
+
+_BAD_FILES = _get_bad_files()
+
+_original_load_document = _gpt_doc.DocumentLoader._load_document
+
+async def _load_document_with_progress(self, file_path, file_extension):
+    filename = os.path.basename(file_path)
+    # Skip files previously identified as crashing
+    if filename in _BAD_FILES or str(file_path) in _BAD_FILES:
+        _load_progress["done"] += 1
+        print(f"  ⚠️  [{_load_progress['done']}/{_load_progress['total']}] SKIPPED (known-bad): {filename}", flush=True)
+        return []
+    # Write BEFORE loading — a native crash will freeze this line as the last entry,
+    # identifying the culprit. Flush to disk immediately so the OS writes it.
+    try:
+        with open(_LOAD_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"LOADING: {file_path}\n")
+            f.flush()
+            os.fsync(f.fileno())
+    except Exception:
+        pass
+    result = await _original_load_document(self, file_path, file_extension)
+    _load_progress["done"] += 1
+    # Mark completion in log
+    try:
+        with open(_LOAD_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"  OK: {file_path}\n")
+    except Exception:
+        pass
+    now = _time.time()
+    if now - _load_progress["last_print"] > 1.0 or _load_progress["done"] == _load_progress["total"]:
+        print(f"  📖 Loaded {_load_progress['done']}/{_load_progress['total']} documents...", flush=True)
+        _load_progress["last_print"] = now
+    return result
+
+_gpt_doc.DocumentLoader._load_document = _load_document_with_progress
+
+# Cache parsed documents per path so we don't re-parse 1000+ PDFs for every question
+_doc_cache = {}
+_original_load = _gpt_doc.DocumentLoader.load
+
+async def _cached_load(self):
+    cache_key = str(self.path) if not isinstance(self.path, list) else tuple(self.path)
+    if cache_key in _doc_cache:
+        print(f"  💾 Reusing cached documents ({len(_doc_cache[cache_key])} pages)", flush=True)
+        return _doc_cache[cache_key]
+
+    # Count total files so the progress counter has a denominator
+    total = 0
+    if isinstance(self.path, list):
+        total = sum(1 for p in self.path if os.path.isfile(p))
+    else:
+        for _root, _dirs, _files in os.walk(self.path):
+            total += len(_files)
+    _load_progress["done"] = 0
+    _load_progress["total"] = total
+    _load_progress["last_print"] = 0.0
+    # Reset the per-file load log so the last "LOADING:" line always identifies
+    # the crashing file from the most recent run.
+    try:
+        _LOAD_LOG_PATH.write_text(f"# PDF load log for {self.path}\n", encoding="utf-8")
+    except Exception:
+        pass
+    print(f"  📚 Parsing {total} local documents (this happens once per species)...", flush=True)
+    if _BAD_FILES:
+        print(f"  ⚠️  {len(_BAD_FILES)} known-bad file(s) will be skipped (see {_BAD_FILES_PATH.name})", flush=True)
+    t0 = _time.time()
+    result = await _original_load(self)
+    print(f"  ✅ Parsed {total} documents in {_time.time() - t0:.1f}s ({len(result)} pages extracted)", flush=True)
+    _doc_cache[cache_key] = result
+    return result
+
+_gpt_doc.DocumentLoader.load = _cached_load
+
+
+# ---------------------------------------------------------------------------
+# FAISS vector store cache for local-doc similarity search.
+#
+# Problem: in hybrid mode, every sub-query calls
+# ContextManager.get_similar_content_by_query(query, pages) with the full
+# local corpus, which feeds it through ContextCompressor → EmbeddingsFilter
+# and re-embeds every chunk on every call. With ~11000 pages and ~3-5
+# sub-queries × 18 questions per species, that's easily 50M+ embedding tokens
+# per species — well over the 5M TPM limit on text-embedding-3-small.
+#
+# Fix: patch get_similar_content_by_query so that substantial corpora (≥50
+# pages, i.e. local docs, not small web-scrape batches) are embedded ONCE
+# into a FAISS index and cached per species. Subsequent sub-queries hit the
+# cache and only pay for embedding the query string (~a few tokens each).
+# The cache is cleared in clear_doc_cache() between species.
+# ---------------------------------------------------------------------------
+_faiss_cache = {}  # key: (doc_path, src_fingerprint); value: FAISS vector store
+_faiss_stats = {"hits": 0, "misses": 0}
+# Lazy-created in the running event loop so we don't bind to the wrong loop.
+_faiss_build_lock = None
+
+# Only corpora at or above this page count get cached; smaller lists are
+# web-scrape results that change per sub-query and don't benefit from caching.
+_FAISS_CACHE_MIN_PAGES = 50
+
+# How many times the embedding provider retries a single batch. OpenAI's
+# default max_retries=2 exhausts quickly while we wait out 5M-TPM throttling
+# on large corpora — bump generously, overridable per-run.
+_EMBED_MAX_RETRIES = int(os.environ.get("OPENAI_EMBED_MAX_RETRIES", "10"))
+
+
+def _pages_fingerprint(pages):
+    """Species-unique fingerprint derived from the source URLs/paths of the
+    corpus. Guarantees two species with the same page count never collide,
+    so correctness no longer depends on clear_doc_cache() being called
+    between species — that remains the canonical way to bound memory, but
+    is no longer load-bearing for result accuracy."""
+    src = "|".join(sorted((p.get("url") or "") for p in pages))
+    return hashlib.md5(src.encode("utf-8")).hexdigest()
+
+
+async def _faiss_similarity_search(vs, researcher, query):
+    """Top-k similarity search that restores the SIMILARITY_THRESHOLD filter
+    the original EmbeddingsFilter applied. FAISS with normalized OpenAI
+    embeddings returns relevance scores in [0, 1] — identical semantics to
+    the original cosine-based filter."""
+    threshold = float(os.environ.get("SIMILARITY_THRESHOLD", 0.42))
+    scored = await vs.asimilarity_search_with_relevance_scores(query, k=20)
+    results = [doc for doc, score in scored if score >= threshold][:10]
+    return researcher.prompt_family.pretty_print_docs(results, 10)
+
+
+async def _get_similar_cached(self, query, pages):
+    from langchain_community.vectorstores import FAISS
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from langchain_core.documents import Document as _LCDocument
+    from gpt_researcher.utils.costs import estimate_embedding_cost
+    from gpt_researcher.memory.embeddings import OPENAI_EMBEDDING_MODEL
+
+    global _faiss_build_lock
+
+    if not pages:
+        return ""
+
+    # Small page lists (web-scrape results) — fall through to original path;
+    # caching them has no benefit and they change per sub-query.
+    if len(pages) < _FAISS_CACHE_MIN_PAGES:
+        return await _original_get_similar(self, query, pages)
+
+    try:
+        doc_path = str(getattr(self.researcher.cfg, "doc_path", "") or "")
+    except Exception:
+        doc_path = ""
+    key = (doc_path, _pages_fingerprint(pages))
+
+    # Cache hit — no lock needed for reads.
+    if key in _faiss_cache:
+        _faiss_stats["hits"] += 1
+        return await _faiss_similarity_search(_faiss_cache[key], self.researcher, query)
+
+    # Cache miss. Serialize the build so concurrent sub-queries don't all
+    # stampede the embedding API in parallel (that's what caused the 6-way
+    # TPM overflow we saw in the logs).
+    if _faiss_build_lock is None:
+        _faiss_build_lock = asyncio.Lock()
+
+    async with _faiss_build_lock:
+        # Re-check inside the lock: another coroutine may have built it while
+        # we were waiting.
+        if key in _faiss_cache:
+            _faiss_stats["hits"] += 1
+            return await _faiss_similarity_search(_faiss_cache[key], self.researcher, query)
+
+        _faiss_stats["misses"] += 1
+        print(f"  🧠 Building FAISS index for {len(pages)} local docs (one-time per species)...", flush=True)
+
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        lc_docs = []
+        for p in pages:
+            raw = p.get("raw_content") or ""
+            if not raw.strip():
+                continue
+            lc_docs.append(_LCDocument(page_content=raw, metadata={"source": p.get("url", "")}))
+        chunks = splitter.split_documents(lc_docs)
+        print(f"  📊 Split into {len(chunks)} chunks; embedding now (this will take a few minutes — TPM limit throttles it)...", flush=True)
+
+        embeddings = self.researcher.memory.get_embeddings()
+        try:
+            if hasattr(embeddings, "max_retries"):
+                embeddings.max_retries = _EMBED_MAX_RETRIES
+        except Exception:
+            pass
+
+        t0 = _time.time()
+        try:
+            vs = await asyncio.to_thread(FAISS.from_documents, chunks, embeddings)
+        except Exception as e:
+            # Build failed (OOM, embedding provider outage, 429 after all
+            # retries). Fall back to the original EmbeddingsFilter path so
+            # this sub-query still returns a result instead of cascading the
+            # failure into every remaining question for the species.
+            print(f"  ⚠️  FAISS build failed ({e}); falling back to original EmbeddingsFilter path for this query", flush=True)
+            return await _original_get_similar(self, query, pages)
+
+        _faiss_cache[key] = vs
+        try:
+            self.researcher.add_costs(estimate_embedding_cost(model=OPENAI_EMBEDDING_MODEL, docs=pages))
+        except Exception:
+            pass
+        print(f"  ✅ FAISS index built in {_time.time() - t0:.1f}s — all remaining sub-queries will reuse it", flush=True)
+
+    return await _faiss_similarity_search(vs, self.researcher, query)
+
+from gpt_researcher.skills.context_manager import ContextManager as _CM
+_original_get_similar = _CM.get_similar_content_by_query
+_CM.get_similar_content_by_query = _get_similar_cached
+
+
+def clear_doc_cache():
+    """Clear the document + FAISS vector caches. Call between assessments/species."""
+    global _faiss_build_lock
+    total = _faiss_stats["hits"] + _faiss_stats["misses"]
+    if total:
+        print(f"  📈 FAISS cache: {_faiss_stats['hits']} hits / {_faiss_stats['misses']} misses", flush=True)
+    _doc_cache.clear()
+    _faiss_cache.clear()
+    _faiss_stats["hits"] = 0
+    _faiss_stats["misses"] = 0
+    _faiss_build_lock = None
+
 from gpt_researcher import GPTResearcher
 from gpt_researcher.utils.enum import Tone
 from datetime import datetime
@@ -42,14 +300,14 @@ VERBOSE = False  # Set True to see GPT Researcher internal logs
 
 # DATABASE PATH - UPDATE THIS IF YOU ADDED PATHWAYS
 # CURRENT SETTING: Using AI-enhanced database (with existing justifications)
-DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel.db"
+DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel_ai_enhanced_13_04_2026.db"
 
 # Output directory (new copy will be created here)
 DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026"
 
 # Filter by EPPO codes (empty list = process all species)
 # Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
-EPPOCODES_TO_POPULATE = []
+EPPOCODES_TO_POPULATE = [ ]
 
 # Filter by question code (None = process all questions)
 # Example: QUESTION_FILTER = "EST2"  # Only process EST2
@@ -69,10 +327,20 @@ TEMP_DOCS_FOLDER = "my-docs"
 # File extensions to include in hybrid research
 DOCUMENT_EXTENSIONS = {".pdf", ".txt", ".docx", ".doc"}
 
+# Filename patterns to EXCLUDE from the research corpus.
+# These patterns match AI-generated outputs from previous runs (which would
+# create a circular feedback loop) and have been observed to crash native
+# document loaders (e.g., UnstructuredWordDocumentLoader on .docx).
+EXCLUDED_FILENAME_PATTERNS = [
+    "_AI_answers_",   # e.g. "Ceratitis capitata_AI_answers_20250430_143728.docx"
+    "_AI_generated_",
+    "_GPTResearcher_",
+]
+
 # =============================================================================
 # API Keys - Read from files
 OPENAI_API_KEY_FILE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\API keys\tore_vkm_openai.txt"
-TAVILY_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\Tavily_key.txt"
+TAVILY_API_KEY_FILE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\API keys\Tavily_key.txt"
 
 # Load API keys from files
 def load_api_key(file_path: str) -> str:
@@ -89,20 +357,24 @@ os.environ['TAVILY_API_KEY'] = load_api_key(TAVILY_API_KEY_FILE)
 # =============================================================================
 
 # GPT Researcher Configuration
+# NOTE: [DEFAULT] = same as gpt_researcher default (no effect, kept for visibility)
+#       [UNUSED]  = only applies to report_type="deep", not "research_report"
+#       Active overrides: TEMPERATURE (0.1 vs 0.4), MAX_SEARCH_RESULTS_PER_QUERY (10 vs 5), TOTAL_WORDS (500 vs 1200), CURATE_SOURCES (true vs false)
 os.environ.update({
-    "TEMPERATURE": "0.1",
-    "FAST_LLM": "openai:gpt-4o-mini",   # Quick tasks: summarization, sub-queries
-    "SMART_LLM": "openai:gpt-4.1",      # Complex reasoning: report writing (long response support)
-    "STRATEGIC_LLM": "openai:o4-mini",  # Planning: agent/query selection
-    "FAST_TOKEN_LIMIT": "3000",
-    "SMART_TOKEN_LIMIT": "6000",
-    "STRATEGIC_TOKEN_LIMIT": "4000",
-    "DEEP_RESEARCH_BREADTH": "3",
-    "DEEP_RESEARCH_DEPTH": "2",
-    "MAX_SEARCH_RESULTS_PER_QUERY": "10",
-    "MAX_ITERATIONS": "3",
-    "TOTAL_WORDS": "400",
-    "REASONING_EFFORT": "medium",   # o-series reasoning level for STRATEGIC_LLM
+    "TEMPERATURE": "0.1",               # Default: 0.4 — lower for deterministic output
+    "FAST_LLM": "openai:gpt-4o-mini",   # [DEFAULT] Quick tasks: summarization, sub-queries
+    "SMART_LLM": "openai:gpt-4.1",      # [DEFAULT] Complex reasoning: report writing (long response support)
+    "STRATEGIC_LLM": "openai:o4-mini",  # [DEFAULT] Planning: agent/query selection
+    "FAST_TOKEN_LIMIT": "3000",         # [DEFAULT]
+    "SMART_TOKEN_LIMIT": "6000",        # [DEFAULT]
+    "STRATEGIC_TOKEN_LIMIT": "4000",    # [DEFAULT]
+    #"DEEP_RESEARCH_BREADTH": "3",      # [DEFAULT] [UNUSED] only applies to report_type="deep"
+    #"DEEP_RESEARCH_DEPTH": "2",        # [DEFAULT] [UNUSED] only applies to report_type="deep"
+    "MAX_SEARCH_RESULTS_PER_QUERY": "10",  # Default: 5 — more sources per query
+    "MAX_ITERATIONS": "5",              # Default: 3 — more research iterations per sub-query
+    "TOTAL_WORDS": "1200",               # Default: 1200 — concise justifications
+    "REASONING_EFFORT": "medium",       # [DEFAULT] o-series reasoning level for STRATEGIC_LLM
+    "CURATE_SOURCES": "true",           # Default: false — filter irrelevant sources before writing
 })
 
 # Excluded domains
@@ -156,11 +428,12 @@ def clean_markdown_formatting(text: str) -> str:
     for pattern in separators:
         text = re.sub(pattern, '', text, flags=re.MULTILINE | re.DOTALL)
 
-    # Remove common AI introduction phrases
+    # Remove common AI introduction headings (anchored so we only strip
+    # standalone section headers, not sentences that mention these words).
     intro_patterns = [
-        r'^.*?[Ii]ntroduction.*?$',
-        r'^.*?[Ss]ummary.*?$',
-        r'^.*?[Oo]verview.*?$',
+        r'^\s*Introduction[:.]?\s*$',
+        r'^\s*Summary[:.]?\s*$',
+        r'^\s*Overview[:.]?\s*$',
         r'^This report.*?$',
     ]
     for pattern in intro_patterns:
@@ -197,7 +470,10 @@ def copy_species_docs_to_temp(eppo_code: str) -> bool:
 
     # Clear existing temp folder
     if temp_path.exists():
-        shutil.rmtree(temp_path)
+        def _force_remove(func, path, _):
+            os.chmod(path, 0o777)
+            func(path)
+        shutil.rmtree(temp_path, onerror=_force_remove)
     temp_path.mkdir(parents=True, exist_ok=True)
     os.environ['DOC_PATH'] = str(temp_path.absolute())
 
@@ -207,19 +483,25 @@ def copy_species_docs_to_temp(eppo_code: str) -> bool:
         print(f"  ⚠️  No local documents folder found for {eppo_code}")
         return False
 
-    # Recursively find all matching documents
+    # Recursively find all matching documents, excluding AI-output files
     docs_copied = 0
+    excluded = 0
     for ext in DOCUMENT_EXTENSIONS:
         for doc_file in species_path.rglob(f"*{ext}"):
-            if doc_file.is_file():
-                # Copy to flat structure with unique names (avoid collisions)
-                dest_name = f"{docs_copied:04d}_{doc_file.name}"
-                dest_path = temp_path / dest_name
-                try:
-                    shutil.copy2(doc_file, dest_path)
-                    docs_copied += 1
-                except Exception as e:
-                    print(f"  ⚠️  Failed to copy {doc_file.name}: {e}")
+            if not doc_file.is_file():
+                continue
+            if any(pat in doc_file.name for pat in EXCLUDED_FILENAME_PATTERNS):
+                excluded += 1
+                continue
+            dest_name = f"{docs_copied:04d}_{doc_file.name}"
+            try:
+                shutil.copy2(doc_file, temp_path / dest_name)
+                docs_copied += 1
+            except Exception as e:
+                print(f"  ⚠️  Failed to copy {doc_file.name}: {e}")
+
+    if excluded:
+        print(f"  🚫 Excluded {excluded} AI-generated file(s) from research corpus")
 
     if docs_copied > 0:
         print(f"  📚 Copied {docs_copied} documents to temp folder")
@@ -230,7 +512,8 @@ def copy_species_docs_to_temp(eppo_code: str) -> bool:
 
 
 def cleanup_temp_docs():
-    """Remove temp my-docs folder."""
+    """Remove temp my-docs folder and clear the in-memory document cache."""
+    clear_doc_cache()
     script_dir = Path(__file__).parent
     temp_path = script_dir / TEMP_DOCS_FOLDER
     if temp_path.exists():
@@ -246,31 +529,46 @@ def cleanup_temp_docs():
 # =============================================================================
 
 def copy_database(source_path: str, output_dir: str) -> str:
-    """Copy entire source database to new location."""
-    # Get original database name without extension
+    """Copy source database to a versioned, timestamped destination.
+
+    Names follow `{base}_v{NNN}_{ISO8601}.db`, e.g.
+        daniel_v002_2026-04-14T15-42-31.db
+
+    Version is auto-incremented based on existing `{base}_v*_*.db` files in
+    `output_dir`. Timestamp uses ISO 8601 with ':' replaced by '-' so the
+    filename is valid on Windows. Both parts together guarantee every run
+    produces a unique, chronologically sortable, reproducible identifier.
+    """
     source_file = Path(source_path)
-    original_name = source_file.stem  # filename without .db
+    original_name = source_file.stem
 
-    # Create timestamp in DD_MM_YYYY format
-    timestamp = datetime.now().strftime("%d_%m_%Y")
+    # Strip any existing versioned suffix first, then the legacy
+    # `_ai_enhanced_...` suffix, to recover a clean base name.
+    base_name = re.sub(r'_v\d+_\d{4}-\d{2}-\d{2}T.*$', '', original_name)
+    base_name = re.sub(r'_ai_enhanced_.*$', '', base_name)
 
-    # Check if source already has _ai_enhanced_ pattern - extract base name
-    if "_ai_enhanced_" in original_name:
-        base_name = original_name.split("_ai_enhanced_")[0]
-    else:
-        base_name = original_name
+    output_dir_path = Path(output_dir)
+    output_dir_path.mkdir(parents=True, exist_ok=True)
 
-    # New name: base_name_ai_enhanced_DD_MM_YYYY.db
-    output_name = f"{base_name}_ai_enhanced_{timestamp}.db"
-    output_path = Path(output_dir) / output_name
+    # Next version: max existing + 1, or 1 if no prior versions exist.
+    existing_versions = []
+    for f in output_dir_path.glob(f"{base_name}_v*_*.db"):
+        m = re.match(rf'{re.escape(base_name)}_v(\d+)_', f.stem)
+        if m:
+            existing_versions.append(int(m.group(1)))
+    next_version = (max(existing_versions) + 1) if existing_versions else 1
 
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    # ISO 8601 timestamp, filesystem-safe (colons → hyphens).
+    timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 
-    # Check if source and destination are the same file (re-run on same day)
+    output_name = f"{base_name}_v{next_version:03d}_{timestamp}.db"
+    output_path = output_dir_path / output_name
+
+    # Safety guard: copying a file onto itself corrupts it. With seconds-level
+    # timestamps this is virtually impossible, but keep the check.
     if source_file.resolve() == output_path.resolve():
-        print(f"\n📋 Using existing database (same-day re-run)...")
-        print(f"   Path: {source_path}")
-        print(f"✅ Working on existing file ({output_path.stat().st_size / 1024:.1f} KB)")
+        print(f"\n📋 Source and destination resolve to the same file; reusing it.")
+        print(f"   Path: {output_path}")
         return str(output_path)
 
     print(f"\n📋 Copying database...")
@@ -280,7 +578,7 @@ def copy_database(source_path: str, output_dir: str) -> str:
     shutil.copy2(source_path, output_path)
 
     if output_path.exists():
-        print(f"✅ Database copied successfully ({output_path.stat().st_size / 1024:.1f} KB)")
+        print(f"✅ Database copied ({output_path.stat().st_size / 1024:.1f} KB)")
     else:
         raise FileNotFoundError(f"Failed to copy database to {output_path}")
 
@@ -289,28 +587,29 @@ def copy_database(source_path: str, output_dir: str) -> str:
 def get_all_assessment_ids(db_path: str, eppo_codes: List[str] = None) -> List[int]:
     """Get all assessment IDs, optionally filtered by EPPO codes."""
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    if eppo_codes:
-        # Filter by EPPO codes (case-insensitive)
-        placeholders = ','.join(['?' for _ in eppo_codes])
-        cursor.execute(f"""
-            SELECT a.idAssessment
-            FROM assessments a
-            JOIN pests p ON a.idPest = p.idPest
-            WHERE UPPER(p.eppoCode) IN ({placeholders})
-            ORDER BY a.idAssessment
-        """, [code.upper() for code in eppo_codes])
-    else:
-        cursor.execute("""
-            SELECT idAssessment
-            FROM assessments
-            ORDER BY idAssessment
-        """)
+        if eppo_codes:
+            # Filter by EPPO codes (case-insensitive)
+            placeholders = ','.join(['?' for _ in eppo_codes])
+            cursor.execute(f"""
+                SELECT a.idAssessment
+                FROM assessments a
+                JOIN pests p ON a.idPest = p.idPest
+                WHERE UPPER(p.eppoCode) IN ({placeholders})
+                ORDER BY a.idAssessment
+            """, [code.upper() for code in eppo_codes])
+        else:
+            cursor.execute("""
+                SELECT idAssessment
+                FROM assessments
+                ORDER BY idAssessment
+            """)
 
-    ids = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    return ids
+        return [row[0] for row in cursor.fetchall()]
+    finally:
+        conn.close()
 
 
 def get_eppo_codes_for_assessments(db_path: str, assessment_ids: List[int]) -> List[str]:
@@ -318,76 +617,77 @@ def get_eppo_codes_for_assessments(db_path: str, assessment_ids: List[int]) -> L
     if not assessment_ids:
         return []
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    placeholders = ','.join(['?' for _ in assessment_ids])
-    cursor.execute(f"""
-        SELECT DISTINCT p.eppoCode
-        FROM assessments a
-        JOIN pests p ON a.idPest = p.idPest
-        WHERE a.idAssessment IN ({placeholders})
-    """, assessment_ids)
-    codes = [row[0] for row in cursor.fetchall() if row[0]]
-    conn.close()
-    return codes
+    try:
+        cursor = conn.cursor()
+        placeholders = ','.join(['?' for _ in assessment_ids])
+        cursor.execute(f"""
+            SELECT DISTINCT p.eppoCode
+            FROM assessments a
+            JOIN pests p ON a.idPest = p.idPest
+            WHERE a.idAssessment IN ({placeholders})
+        """, assessment_ids)
+        return [row[0] for row in cursor.fetchall() if row[0]]
+    finally:
+        conn.close()
 
 def get_assessment_info(db_path: str, assessment_id: int) -> Dict:
     """Get assessment details including pest and regular questions."""
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    # Get assessment with hosts (hosts is in assessments table)
-    cursor.execute("""
-        SELECT a.idAssessment, a.idPest, p.scientificName, p.eppoCode, a.hosts
-        FROM assessments a
-        JOIN pests p ON a.idPest = p.idPest
-        WHERE a.idAssessment = ?
-    """, (assessment_id,))
+        # Get assessment with hosts (hosts is in assessments table)
+        cursor.execute("""
+            SELECT a.idAssessment, a.idPest, p.scientificName, p.eppoCode, a.hosts
+            FROM assessments a
+            JOIN pests p ON a.idPest = p.idPest
+            WHERE a.idAssessment = ?
+        """, (assessment_id,))
 
-    result = cursor.fetchone()
+        result = cursor.fetchone()
 
-    if not result:
+        if not result:
+            return None
+
+        assessment_id, pest_id, pest_name, eppo_code, hosts = result
+
+        # Get regular questions
+        cursor.execute("""
+            SELECT a.idAnswer, q.idQuestion, q."group", q.number, q.subgroup,
+                   q.question, q.info, a.justification
+            FROM answers a
+            JOIN questions q ON a.idQuestion = q.idQuestion
+            WHERE a.idAssessment = ?
+            ORDER BY q.idQuestion
+        """, (assessment_id,))
+
+        answers = []
+        for row in cursor.fetchall():
+            id_answer, id_question, grp, num, subgrp, text, info, justification = row
+            code = f"{grp}{num}.{subgrp}" if subgrp else f"{grp}{num}."
+            answers.append({
+                'idAnswer': id_answer,
+                'code': code,
+                'text': text,
+                'info': info or "",
+                'existing_justification': justification or ""
+            })
+
+        return {
+            'idAssessment': assessment_id,
+            'idPest': pest_id,
+            'scientificName': pest_name,
+            'eppoCode': eppo_code,
+            'hosts': hosts or "",
+            'answers': answers
+        }
+    finally:
         conn.close()
-        return None
-
-    assessment_id, pest_id, pest_name, eppo_code, hosts = result
-
-    # Get regular questions
-    cursor.execute("""
-        SELECT a.idAnswer, q.idQuestion, q."group", q.number, q.subgroup,
-               q.question, q.info, a.justification
-        FROM answers a
-        JOIN questions q ON a.idQuestion = q.idQuestion
-        WHERE a.idAssessment = ?
-        ORDER BY q.idQuestion
-    """, (assessment_id,))
-
-    answers = []
-    for row in cursor.fetchall():
-        id_answer, id_question, grp, num, subgrp, text, info, justification = row
-        code = f"{grp}{num}.{subgrp}" if subgrp else f"{grp}{num}."
-        answers.append({
-            'idAnswer': id_answer,
-            'code': code,
-            'text': text,
-            'info': info or "",
-            'existing_justification': justification or ""
-        })
-
-    conn.close()
-
-    return {
-        'idAssessment': assessment_id,
-        'idPest': pest_id,
-        'scientificName': pest_name,
-        'eppoCode': eppo_code,
-        'hosts': hosts or "",
-        'answers': answers
-    }
 
 def update_answer_justification(db_path: str, id_answer: int, justification: str):
     """Update justification in answers table."""
+    conn = sqlite3.connect(db_path)
     try:
-        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
         # Verify table exists
@@ -398,13 +698,14 @@ def update_answer_justification(db_path: str, id_answer: int, justification: str
         cursor.execute("UPDATE answers SET justification = ? WHERE idAnswer = ?",
                       (justification, id_answer))
         conn.commit()
-        conn.close()
     except Exception as e:
         print(f"  ⚠️  Database error in update_answer_justification:")
         print(f"     Database: {db_path}")
         print(f"     Answer ID: {id_answer}")
         print(f"     Error: {e}")
         raise
+    finally:
+        conn.close()
 
 # =============================================================================
 # DATABASE FUNCTIONS - PATHWAYS
@@ -413,73 +714,79 @@ def update_answer_justification(db_path: str, id_answer: int, justification: str
 def get_assessment_pathways(db_path: str, assessment_id: int) -> List[Dict]:
     """Get all selected pathways for an assessment."""
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT ep.idEntryPathway, ep.idPathway, p.name, p."group", ep.specification
-        FROM entryPathways ep
-        JOIN pathways p ON ep.idPathway = p.idPathway
-        WHERE ep.idAssessment = ?
-        ORDER BY p.idPathway
-    """, (assessment_id,))
+        cursor.execute("""
+            SELECT ep.idEntryPathway, ep.idPathway, p.name, p."group", ep.specification
+            FROM entryPathways ep
+            JOIN pathways p ON ep.idPathway = p.idPathway
+            WHERE ep.idAssessment = ?
+            ORDER BY p.idPathway
+        """, (assessment_id,))
 
-    pathways = []
-    for row in cursor.fetchall():
-        id_entry, id_pathway, name, group, spec = row
-        pathways.append({
-            'idEntryPathway': id_entry,
-            'idPathway': id_pathway,
-            'name': name,
-            'group': group,
-            'specification': spec or ""
-        })
+        pathways = []
+        for row in cursor.fetchall():
+            id_entry, id_pathway, name, group, spec = row
+            pathways.append({
+                'idEntryPathway': id_entry,
+                'idPathway': id_pathway,
+                'name': name,
+                'group': group,
+                'specification': spec or ""
+            })
 
-    conn.close()
-    return pathways
+        return pathways
+    finally:
+        conn.close()
 
 def get_pathway_questions(db_path: str) -> List[Dict]:
     """Get all pathway questions (ENT2A, ENT2B, ENT3, ENT4)."""
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT idPathQuestion, "group", number, question, info
-        FROM pathwayQuestions
-        ORDER BY idPathQuestion
-    """)
+        cursor.execute("""
+            SELECT idPathQuestion, "group", number, question, info
+            FROM pathwayQuestions
+            ORDER BY idPathQuestion
+        """)
 
-    questions = []
-    for row in cursor.fetchall():
-        id_q, grp, num, text, info = row
-        code = f"{grp}{num}"
-        questions.append({
-            'idPathQuestion': id_q,
-            'code': code,
-            'text': text,
-            'info': info or ""
-        })
+        questions = []
+        for row in cursor.fetchall():
+            id_q, grp, num, text, info = row
+            code = f"{grp}{num}"
+            questions.append({
+                'idPathQuestion': id_q,
+                'code': code,
+                'text': text,
+                'info': info or ""
+            })
 
-    conn.close()
-    return questions
+        return questions
+    finally:
+        conn.close()
 
 def get_existing_pathway_justification(db_path: str, id_entry_pathway: int,
                                        id_path_question: int) -> str:
     """Get existing pathway justification."""
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT justification FROM pathwayAnswers
-        WHERE idEntryPathway = ? AND idPathQuestion = ?
-    """, (id_entry_pathway, id_path_question))
-    result = cursor.fetchone()
-    conn.close()
-    return result[0] if result and result[0] else ""
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT justification FROM pathwayAnswers
+            WHERE idEntryPathway = ? AND idPathQuestion = ?
+        """, (id_entry_pathway, id_path_question))
+        result = cursor.fetchone()
+        return result[0] if result and result[0] else ""
+    finally:
+        conn.close()
 
 def update_pathway_justification(db_path: str, id_entry_pathway: int,
                                  id_path_question: int, justification: str):
     """Update or insert pathway justification."""
+    conn = sqlite3.connect(db_path)
     try:
-        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
         # Verify table exists
@@ -507,13 +814,14 @@ def update_pathway_justification(db_path: str, id_entry_pathway: int,
             """, (id_entry_pathway, id_path_question, justification))
 
         conn.commit()
-        conn.close()
     except Exception as e:
         print(f"  ⚠️  Database error in update_pathway_justification:")
         print(f"     Database: {db_path}")
         print(f"     EntryPathway ID: {id_entry_pathway}, PathQuestion ID: {id_path_question}")
         print(f"     Error: {e}")
         raise
+    finally:
+        conn.close()
 
 # =============================================================================
 # QUESTION-SPECIFIC INSTRUCTIONS
@@ -521,8 +829,12 @@ def update_pathway_justification(db_path: str, id_entry_pathway: int,
 
 def get_question_specific_instructions(question_code: str, pest_name: str,
                                        pathway_name: str = None, hosts: str = None) -> str:
-    """Get research instructions from Rmd-derived JSON. Fails if unavailable."""
-    return build_justification_prompt(question_code, pest_name, pathway_name, hosts)
+    """Get research instructions from Rmd-derived JSON. Returns None if question not found (e.g. IMP2.x)."""
+    try:
+        return build_justification_prompt(question_code, pest_name, pathway_name, hosts)
+    except KeyError:
+        print(f"  ⚠️  No Rmd instructions for {question_code}, using database question text")
+        return None
 
 # =============================================================================
 # GPT RESEARCHER FUNCTIONS
@@ -654,17 +966,6 @@ async def research_justification(pest_name: str, question_code: str, question_te
     """Research a single justification using GPT Researcher."""
 
     pathway_text = f" (Pathway: {pathway_name})" if pathway_name else ""
-    print(f"\n{'=' * 80}")
-    print(f"Researching: {pest_name} - {question_code}{pathway_text}")
-    print(f"{'=' * 80}\n")
-
-    if exclude_domains:
-        print(f"⛔ Excluding: {', '.join(exclude_domains)}")
-
-    if hosts:
-        print(f"🌱 Hosts: {hosts[:100]}{'...' if len(hosts) > 100 else ''}")
-
-    print(f"🔬 Research mode: {'hybrid (web + local docs)' if use_hybrid else 'web-only'}")
 
     query = create_research_query(pest_name, question_code, question_text,
                                   question_info, pathway_name, hosts)
@@ -781,7 +1082,8 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                 combined = f"{existing}\n\n{ai_text}" if existing else ai_text
                 update_answer_justification(db_path, answer['idAnswer'], combined)
 
-                print(f"✅ Updated ({len(combined)} chars)")
+                preview = ai_text[:200].replace('\n', ' ')
+                print(f"✅ Saved: {preview}...")
             except Exception as e:
                 print(f"❌ Error: {str(e)}")
 
@@ -850,7 +1152,8 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                                 db_path, pathway['idEntryPathway'],
                                 pq['idPathQuestion'], combined)
 
-                            print(f"✅ Updated ({len(combined)} chars)")
+                            preview = ai_text[:2000].replace('\n', ' ')
+                            print(f"✅ Saved: {preview}...")
                         except Exception as e:
                             print(f"❌ Error: {str(e)}")
             else:
@@ -884,7 +1187,7 @@ async def main(source_db: str = DEFAULT_DB_PATH,
     print(f"📂 Skip existing justifications: {skip_existing}")
 
     if exclude_domains is None:
-        exclude_domains = EXCLUDED_DOMAINS
+        exclude_domains = []
 
     if exclude_domains:
         print(f"\n⛔ Excluded: {', '.join(exclude_domains)}")
@@ -988,20 +1291,17 @@ if __name__ == "__main__":
     parser.add_argument('--eppo-codes', type=str, nargs='+', default=None,
                        help='Filter by EPPO codes (e.g., --eppo-codes XYLEFA ANOLGL)')
     parser.add_argument('--overwrite', action='store_true',
-                       help=f'Overwrite existing justifications (default behavior: SKIP_EXISTING_JUSTIFICATION={SKIP_EXISTING_JUSTIFICATION})')
+                       help=f'Process questions that already have a justification and APPEND the new AI text (default: skip them; SKIP_EXISTING_JUSTIFICATION={SKIP_EXISTING_JUSTIFICATION})')
     parser.add_argument('--exclude-domains', type=str, nargs='+', default=None)
     parser.add_argument('--no-default-exclusions', action='store_true')
 
     args = parser.parse_args()
 
-    # Build exclusion list
-    exclude_domains = None
-    if not args.no_default_exclusions:
-        exclude_domains = EXCLUDED_DOMAINS.copy()
-        if args.exclude_domains:
-            exclude_domains.extend(args.exclude_domains)
-    elif args.exclude_domains:
-        exclude_domains = args.exclude_domains
+    # Build exclusion list. --no-default-exclusions suppresses the built-in
+    # list; --exclude-domains adds on top regardless.
+    exclude_domains = [] if args.no_default_exclusions else EXCLUDED_DOMAINS.copy()
+    if args.exclude_domains:
+        exclude_domains.extend(args.exclude_domains)
 
     # Determine skip_existing based on command line flag or use config default
     skip_existing = False if args.overwrite else None  # None means use config default

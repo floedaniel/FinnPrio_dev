@@ -7,10 +7,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - May 2026
+
+#### Pathway tab save bug — answers silently dropped, UI jumped to first pathway tab (`server.R`) — 2026-05-28
+
+- **Symptom**: Clicking **Save Answers** on a multi-pathway assessment (a) jumped the pathway tabset back to the first pathway, and (b) silently failed to persist answers for any pathway that was off-screen at the moment of the click. The data simply was not written, and the assessor had no way to know.
+- **Root causes**:
+  - **(A)** `output$questionariePath` built its tabset with `do.call(tabsetPanel, tabs)` — no `id` argument — and the inner `tabPanel(id = x, ...)` passed `id`, which Shiny silently ignores (the correct argument is `value`). Result: the active tab was not exposed as a Shiny input and could not be restored after a re-render.
+  - **(B)** Both `output$questionarie` and `output$questionariePath` took live reactive dependencies on `answers$main` / `answers$entry`. `save_answers` reassigned both reactives after every DB UPSERT, which invalidated the entire questionnaire UI and rebuilt the pathway tabset DOM from scratch — defaulting to the first tab and destroying DT input bindings for off-screen pathway tabs before `extract_answers_entry()` could read them. The write loop then saw `NULL` for those inputs and silently dropped the rows.
+  - **(C)** `save_answers` and `save_general` mutated `assessments$selected$endDate / $reference / $hosts / $potentialEntryPathways / $notes` slot fields after every save. Those slot writes propagated as `reactiveValues` updates and re-invalidated `output$questionarie` (which reads `assessments$selected` as a live dep).
+  - **(D)** In `save_general`, the `selected_entries` re-query ran *before* the pathway DELETE loop, so `assessments$entry` was reassigned to a list that still contained pathways the same handler was about to delete. `answers$entry` was never refreshed at all.
+- **Fix** (six commits on branch `fix/pathway-tab-save-bug`, `3f54591..55464a5`):
+  - **§4.A (`3f54591`)** — `do.call(tabsetPanel, c(tabs, list(id = "pathway_tabset", type = "tabs")))`; inner `tabPanel(value = x, ...)`. Active tab now exposed as `input$pathway_tabset`.
+  - **§4.B (`41fe82a`)** — `output$questionarie` reads `answers$main` once via `current_answers_main <- isolate(answers$main)` near the top of the renderUI; downstream uses the snapshot. Mastering Shiny Ch. 10 pattern (`value <- isolate(input$dynamic)`).
+  - **§4.C (`860b2bb`)** — `output$questionariePath` reads `answers$entry` once via `current_answers_entry <- isolate(answers$entry)`. Same pattern. Eight read sites updated. The secondary DT `Shiny.bindAll` race condition disappears as a side effect because the tabset DOM is no longer torn down on save.
+  - **§4.D (`d84df8d`)** — Removed slot mutations on `assessments$selected` from both `save_answers` and `save_general`; restructured `save_general`'s pathway add/remove flow so DELETEs run *before* the `selected_entries` re-query and both `assessments$entry` and `answers$entry` are refreshed in lockstep from the post-mutation DB state. A `pathways_were_removed` flag gates the existing post-remove `updateTabsetPanel(session, "all_assessments", selected = "all")` / `selectRows(NULL)` UX bump.
+  - **§4.E (`741ed1c`, `55464a5`)** — Both `ass_finish` and `ass_valid` capture `prev_tab <- isolate(input$pathway_tabset)` at the top and call `updateTabsetPanel(session, "pathway_tabset", selected = prev_tab)` near the end, restoring pathway tab selection after the unavoidable `output$questionarie` re-render driven by the `$finished` / `$valid` slot mutations. The `ass_valid` `shinyalert` conflict-callback path also restores from inside the callback (the synchronous restore fires before the async slot mutation in that one sub-case).
+- **Why these fixes**: The Save → DB → reassign-reactive → re-render cycle was fundamentally racing the DOM rebuild against input-binding completion. Switching seed reads to `isolate()` snapshots decouples the renderUI graph from the save-handler write graph: renders fire when the user picks a different assessment or when pathways are added/removed, *not* when answers are saved. Downstream consumers (validation, simulation, report) still read the live reactives without `isolate()` and continue to see fresh DB state.
+- **Files**: `server.R` only. +135 / -61 lines. No changes to `ui.R`, `global.R`, the `R/` helpers, or any Python code.
+- **Design spec**: `docs/superpowers/specs/2026-05-28-pathway-save-bug-design.md` (untracked per project convention). Implementation plan at `docs/superpowers/plans/2026-05-28-pathway-save-bug.md`.
+
+### Changed - May 2026
+
+#### Master database folder and file renamed for cross-platform compatibility
+- Folder `databases/master database/` (space) renamed to `databases/master_database/` (underscore) — spaces in folder names caused path issues on some platforms
+- Script 10 output file renamed from `finnprio_master.db` to `master_finnprio.db`
+- `repair_master_duplicates.R` path updated to match new folder name
+
+#### `10_populate_master_database.R` — backup path and dedup fix
+- **Backup path**: Backups now stored under `databases/master_database/backups/` (previously written to the same folder as the master DB, mixing backups and live files)
+- **Dedup fix (v2)**: Assessment deduplication now groups by **master pest ID** instead of source pest ID. This fixes a silent duplicate-insertion bug where two source pest rows with the same EPPO code but different capitalisation (e.g. `"Agilus anxius"` vs `"Agilus Anxius"` for AGRLAX) both mapped to the same master pest and both got inserted, producing duplicate assessments and crashing the Explorer. The fix adds a `master_pest_id` column to the candidate pool and keeps only the assessment with the newest simulation date per master pest (falling back to `endDate` when neither has a simulation)
+
+### Changed - May 2026
+
+#### FinnPRIO Explorer — UI defaults and deployment
+
+##### All filter checkboxes ticked by default (`ui.R`, `server.R`)
+- `show_na_quarantine` changed from `value = FALSE` to `value = TRUE` in `ui.R`
+- `show_na_threatened_sectors` changed from `value = FALSE` to `value = TRUE` in `server.R`
+- Effect: Quarantine Status, Taxonomic Group, Threatened Sectors, and Presence in Europe checkboxes are all pre-selected when the app opens
+
+##### Default colour variable changed to Taxonomic group (`ui.R`)
+- `selected = "quarantine_status"` → `selected = "taxonomic_group"` in the colour-by selectInput
+- Effect: scatter plots open coloured by taxonomic group instead of quarantine status
+
+##### Risk rank plot height made dynamic (`server.R`)
+- `plotOutput("riskrank_plot", height = "900px")` → `plotOutput("riskrank_plot", height = "auto")`
+- `renderPlot({...})` updated to `renderPlot({...}, height = function() max(600, nrow(cleanfinnprioresults) * 30))`
+- Effect: plot grows proportionally with the number of pests (e.g. 129 pests → ~3870 px), eliminating the cramped overplot
+
+##### Relative database path for shinyapps.io compatibility (`global.R`)
+- Absolute Windows path replaced with `db_file <- "data/finnprio_master.db"` — required for deployment; shinyapps.io cannot resolve Windows absolute paths
+
+##### Explicit `appFiles` parameter in deployment script (`push_to_shinyapps.io.r`)
+- Added `appFiles` vector listing exactly which files to bundle (`global.R`, `server.R`, `ui.R`, `R/constants.R`, `R/functions.R`, `R/transform_db_into_explorer.R`, `data/finnprio_master.db`, `www/img/*`)
+- Prevents large development files (renv, README, diagrams) from inflating the bundle and triggering timeouts
+
+### Added - May 2026
+
+#### NIBIO Totalkalkylen MCP integration (`python/nibio_query_lib.py`, `python/nibio_mcp_server.py`)
+- New `nibio_query_lib.py`: pure urllib API client for the NIBIO Totalkalkylen REST service (no AI SDK). Three functions:
+  - `nibio_list_groups(search="")` — all 50 product groups, searchable by keyword; key groups: 2606=Korn, 2607=Poteter, 2608=Hagebruksprodukter, 2641=Jordbruksareal
+  - `nibio_list_posts(group_id, search="")` — line items within a group
+  - `nibio_get_data(post_id, years_back=15)` — 68-year time series (1959–2026) with kvantum (Tonn), pris (Kr/100 kg), verdi (1000 kr); most recent year is a budget estimate
+- New `nibio_mcp_server.py`: FastMCP 3.x stdio server exposing the three functions as MCP tools with FinnPRIO-specific guidance in docstrings
+- `populate_finnprio_justifications.py` wired: IMP1, EST2, IMP2.2 now attach the NIBIO MCP server and inject agricultural production context before research
+  - `NIBIO_QUESTIONS = {'IMP1', 'EST2', 'IMP2.2'}` constant drives activation
+  - `build_nibio_mcp_configs()` and `build_nibio_context()` mirror the SSB pattern
+  - IMP1 → verdi (crop value at risk); EST2 → kvantum + group 2641 area data; IMP2.2 → kvantum (self-sufficiency volume)
+
+#### Norwegian customs tariff search (`python/ssb_query_lib.py`, `python/ssb_mcp_server.py`)
+- `toll_search_hs_codes(query, chapters=None, max_results=40)` added to `ssb_query_lib.py`: searches the Norwegian customs tariff XML (English) by keyword and returns 8-digit commodity IDs (`Varekoder`) for use in SSB table 08801
+  - Downloads `customstariffstructure.xml` from data.toll.no on first call; cached to `python/customstariffstructure.xml` (4.2 MB, 7 436 codes)
+  - Parsed into an in-memory index per process — no re-download during a pipeline run
+  - Defaults to plant-relevant chapters (06–14, 44, 45); pass `chapters=[]` to search all
+- `search_tariff_codes(query, chapters)` tool added to `ssb_mcp_server.py` — AI now resolves host plant keywords (e.g. `"potato"`, `"birch"`, `"wheat"`) to exact Varekoder before calling `query_data`, replacing unreliable English keyword guessing in SSB's own labels
+
+### Changed - May 2026
+
+#### SSB MCP server activation gated to trade pathways only (`python/populate_finnprio_justifications.py`)
+- `SSB_PATHWAYS` set defines trade-relevant pathways via keyword match: `"seeds"`, `"plants for planting"`, `"wood"`, `"food"`, `"fodder"`, `"living plant"`
+- `pathway_uses_ssb(pathway_name)` guard added — SSB MCP is now skipped for Hitchhiking, Natural spread, and Intentional introduction pathways, which have no commodity trade stream to query
+- Prior behaviour: SSB was activated for all ENT3 questions regardless of pathway
+
 ### Added - April 2026
 
 #### New populate database scripts (`scripts/populate database scripts/`)
-- `7_populate_masterdatabase.R`: Scans all `4_master` subfolders under a base directory, merges every `.db` file found into a single master database with timestamped backup; deduplicates assessors by name and pests by EPPO code
+- `7_populate_database.R` (previously `7_populate_masterdatabase.R`): Scans all `4_master` subfolders under a base directory, merges every `.db` file found into a single master database with timestamped backup; deduplicates assessors by name and pests by EPPO code
 - `8_batch_simulation.R`: Batch runs Monte Carlo simulations for all assessments in a FinnPRIO database (renamed from previous numbering)
 
 ### Changed - April 2026

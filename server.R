@@ -112,6 +112,7 @@ server <- function(input, output, session) {
     withProgress({
       setProgress(.1)
       consql <<- dbConnect(RSQLite::SQLite(), db_path())
+      dbExecute(consql, "PRAGMA foreign_keys = ON")
       # consql <- dbConnect(RSQLite::SQLite(), dbname = input$db_file$datapath)
       con(consql)
       if (!is.null(con())) {
@@ -440,11 +441,13 @@ server <- function(input, output, session) {
                                                LEFT JOIN threatenedSectors ON threatXassessment.idThrSect = threatenedSectors.idThrSect
                                                WHERE idAssessment = {as.integer(assessments$selected$idAssessment)}"))
       # Load previous answers
-      answers$main <- dbGetQuery(con(), glue("SELECT * FROM answers WHERE idAssessment = {assessments$selected$idAssessment}"))
+      answers$main <- dbGetQuery(con(), glue("SELECT * FROM answers WHERE idAssessment = {assessments$selected$idAssessment}")) |>
+        mutate(across(c(min, likely, max), ~ if_else(.x == "", NA_character_, .x)))
       answers$entry <- dbGetQuery(con(), glue("SELECT pa.*, ep.idAssessment, ep.idPathway
-                                                FROM pathwayAnswers AS pa 
+                                                FROM pathwayAnswers AS pa
                                                 LEFT JOIN entryPathways AS ep ON pa.idEntryPathway = ep.idEntryPathway
-                                                WHERE pa.idEntryPathway IN ({paste(selected_entries$idEntryPathway, collapse = ', ')})"))
+                                                WHERE pa.idEntryPathway IN ({paste(selected_entries$idEntryPathway, collapse = ', ')})")) |>
+        mutate(across(c(min, likely, max), ~ if_else(.x == "", NA_character_, .x)))
       
       updateTabsetPanel(session, "all_assessments", selected = "sel")
     }
@@ -678,16 +681,24 @@ server <- function(input, output, session) {
   ## Questionaries ----
   output$questionarie <- renderUI({
     req(questions$main)
-    req(answers$main)
-    # req(assessments$selected)
     req(input$assessments_rows_selected)
-    
+
+    # Take a non-reactive snapshot of answers$main. Mastering Shiny Ch. 10
+    # pattern: this renderUI must re-run when the user picks a different
+    # assessment (assessments$selected dependency stays live), but NOT when
+    # save_answers writes back to answers$main after a DB UPSERT. The save
+    # handler still refreshes answers$main for downstream consumers
+    # (validation, simulation, report); those readers do NOT isolate and
+    # therefore continue to see fresh DB state.
+    current_answers_main <- isolate(answers$main)
+    req(current_answers_main)
+
     quesEnt <- questions$main |> filter(group == "ENT") |> arrange(number)
     quesEst <- questions$main |> filter(group == "EST") |> arrange(number)
     quesImp <- questions$main |> filter(group == "IMP") |> arrange(number)
     quesMan <- questions$main |> filter(group == "MAN") |> arrange(number)
-    
-    answers_logical <- answers_2_logical(answers$main, questions$main)
+
+    answers_logical <- answers_2_logical(current_answers_main, questions$main)
     
     if(is.null(assessments$selected)){
       ui <- NULL
@@ -706,7 +717,7 @@ server <- function(input, output, session) {
                               options <- quesEnt$list[x]
                               id <- quesEnt$number[x]
                               info <- quesEnt$info[x]
-                              just <- answers$main |>
+                              just <- current_answers_main |>
                                 filter(idQuestion == quesEnt$idQuestion[x]) |>
                                 pull(justification)
                               tagList(
@@ -751,8 +762,8 @@ server <- function(input, output, session) {
                             options <- quesEst$list[x]
                             id <- quesEst$number[x]
                             info <- quesEst$info[x]
-                            just <- answers$main |> 
-                              filter(idQuestion == quesEst$idQuestion[x]) |> 
+                            just <- current_answers_main |>
+                              filter(idQuestion == quesEst$idQuestion[x]) |>
                               pull(justification)
                             tagList(
                               div(class = "flex-row",
@@ -791,8 +802,8 @@ server <- function(input, output, session) {
                             options <- quesImp$list[x]
                             id <- quesImp$number[x]
                             info <- quesImp$info[x]
-                            just <- answers$main |> 
-                              filter(idQuestion == quesImp$idQuestion[x]) |> 
+                            just <- current_answers_main |>
+                              filter(idQuestion == quesImp$idQuestion[x]) |>
                               pull(justification)
                             type <- quesImp$type[x]
                             tagList(
@@ -832,8 +843,8 @@ server <- function(input, output, session) {
                             options <- quesMan$list[x]
                             id <- quesMan$number[x]
                             info <- quesMan$info[x]
-                            just <- answers$main |> 
-                              filter(idQuestion == quesMan$idQuestion[x]) |> 
+                            just <- current_answers_main |>
+                              filter(idQuestion == quesMan$idQuestion[x]) |>
                               pull(justification)
                             sub <- quesMan$subgroup[x]
                             tagList(
@@ -972,8 +983,14 @@ server <- function(input, output, session) {
     req(assessments$selected)
     req(assessments$entry)
 
+    # Take a non-reactive snapshot of answers$entry. The pathway tabset
+    # must rebuild when assessments$entry changes (pathway added/removed
+    # in save_general), but NOT when save_answers writes back fresh
+    # pathwayAnswers rows. Same pattern as output$questionarie.
+    current_answers_entry <- isolate(answers$entry)
+
     tabs <- lapply(names(assessments$entry), function(x){
-      tabPanel(id = x, 
+      tabPanel(value = x,
                title = pathways$data |>
                  filter(idPathway == x) |>
                  pull(name),
@@ -990,11 +1007,11 @@ server <- function(input, output, session) {
                                     questions$entry$question[1], 
                                     fromJSON(questions$entry$list[1])$opt,
                                     fromJSON(questions$entry$list[1])$text,
-                                    answers_path_2_logical(answers$entry, questions$entry)),
+                                    answers_path_2_logical(current_answers_entry, questions$entry)),
                    br(),
                    textAreaInput(glue("justENT2A_{x}"),
                                  label = "Justification",
-                                 value = answers$entry |>
+                                 value = current_answers_entry |>
                                    filter(idPathway == x, idPathQuestion == 1) |>
                                    pull(justification),
                                  width = 'auto',
@@ -1013,12 +1030,12 @@ server <- function(input, output, session) {
                                      questions$entry$question[2], 
                                      fromJSON(questions$entry$list[2])$opt,
                                      fromJSON(questions$entry$list[2])$text,
-                                     answers_path_2_logical(answers$entry, questions$entry)),
+                                     answers_path_2_logical(current_answers_entry, questions$entry)),
                    br(),
                     textAreaInput(glue("justENT2B_{x}"),
                                   label = "Justification",
-                                  value = answers$entry |> 
-                                    filter(idPathway == x, idPathQuestion == 2) |> 
+                                  value = current_answers_entry |>
+                                    filter(idPathway == x, idPathQuestion == 2) |>
                                     pull(justification),
                                   width = 'auto',
                                   height = '150px',
@@ -1036,12 +1053,12 @@ server <- function(input, output, session) {
                                      questions$entry$question[3],
                                      fromJSON(questions$entry$list[3])$opt,
                                      fromJSON(questions$entry$list[3])$text,
-                                     answers_path_2_logical(answers$entry, questions$entry)),
+                                     answers_path_2_logical(current_answers_entry, questions$entry)),
                    br(),
                     textAreaInput(glue("justENT3_{x}"),
                                   label = "Justification",
-                                  value = answers$entry |> 
-                                    filter(idPathway == x, idPathQuestion == 3) |> 
+                                  value = current_answers_entry |>
+                                    filter(idPathway == x, idPathQuestion == 3) |>
                                     pull(justification),
                                   width = 'auto',
                                   height = '150px',
@@ -1059,12 +1076,12 @@ server <- function(input, output, session) {
                                      questions$entry$question[4], 
                                      fromJSON(questions$entry$list[4])$opt,
                                      fromJSON(questions$entry$list[4])$text,
-                                     answers_path_2_logical(answers$entry, questions$entry)),
+                                     answers_path_2_logical(current_answers_entry, questions$entry)),
                    br(),
                     textAreaInput(glue("justENT4_{x}"),
                                   label = "Justification",
-                                  value = answers$entry |> 
-                                    filter(idPathway == x, idPathQuestion == 4) |> 
+                                  value = current_answers_entry |>
+                                    filter(idPathway == x, idPathQuestion == 4) |>
                                     pull(justification),
                                   width = 'auto',
                                   height = '150px',
@@ -1074,7 +1091,7 @@ server <- function(input, output, session) {
               )
     })
     
-    ui <- do.call(tabsetPanel, tabs)
+    ui <- do.call(tabsetPanel, c(tabs, list(id = "pathway_tabset", type = "tabs")))
     return(ui)
   })
   
@@ -1129,6 +1146,12 @@ server <- function(input, output, session) {
   ## Mark as finished and valid ----
   observeEvent(input$ass_finish, {
     req(answers$main)
+
+    # §4.E: capture the active pathway tab so we can restore it after the
+    # forthcoming assessments$selected mutation re-renders output$questionarie
+    # (and with it, output$questionariePath, which defaults to its first tab).
+    prev_tab <- isolate(input$pathway_tabset)
+
     if (input$ass_finish == TRUE) {
       ## Check for the main questions
       answers_df <- answers$main |> 
@@ -1213,16 +1236,29 @@ server <- function(input, output, session) {
     # reload the assessments data
     assessments$data <- dbReadTable(con(), "assessments")
     # assessments$selected <- assessments$data[input$assessments_rows_selected, ]
-    # assessments$selected <- assessments$selected |> 
+    # assessments$selected <- assessments$selected |>
     #   left_join(pests$data, by = "idPest") |>
-    #   left_join(assessors$data, by = "idAssessor") |> 
-    #   mutate(label = paste(scientificName, eppoCode, 
-    #                        paste(firstName, lastName), startDate, 
+    #   left_join(assessors$data, by = "idAssessor") |>
+    #   mutate(label = paste(scientificName, eppoCode,
+    #                        paste(firstName, lastName), startDate,
     #                        sep = "_"))
+
+    # §4.E: restore pathway tab selection after the unavoidable
+    # output$questionarie re-render driven by the assessments$selected
+    # slot mutation above. updateTabsetPanel is queued in the same flush
+    # cycle as the renderUI output, so the new tabset receives the
+    # selected = prev_tab message immediately after it is built.
+    if (!is.null(prev_tab)) {
+      updateTabsetPanel(session, "pathway_tabset", selected = prev_tab)
+    }
   }, ignoreInit = TRUE)
-  
+
   observeEvent(input$ass_valid, {
     req(answers$main)
+
+    # §4.E: same pattern as ass_finish — capture pathway tab for restore.
+    prev_tab <- isolate(input$pathway_tabset)
+
     if (input$ass_valid){
       
       if (assessments$selected$finished) {
@@ -1239,15 +1275,23 @@ server <- function(input, output, session) {
             showConfirmButton = TRUE, showCancelButton = TRUE,
             confirmButtonText = "YES", cancelButtonText = "NO",  
             timer = 0, animation = TRUE,
-            callbackR = function(value) { 
+            callbackR = function(value) {
               if (value) {
                 dbExecute(con(), "UPDATE assessments SET valid = ? WHERE idAssessment = ?",
                           params = list(0, others$idAssessment))
-                
+
                 dbExecute(con(), "UPDATE assessments SET valid = ? WHERE idAssessment = ?",
                           params = list(as.integer(input$ass_valid),
                                         assessments$selected$idAssessment))
                 assessments$selected$valid <- as.integer(input$ass_valid)
+                # §4.E (callback): the slot mutation above triggers an async
+                # output$questionarie re-render. The synchronous restore at
+                # the end of the enclosing observer body fires BEFORE this
+                # callback runs and is therefore a no-op for this path —
+                # restore again here. prev_tab is captured by closure.
+                if (!is.null(prev_tab)) {
+                  updateTabsetPanel(session, "pathway_tabset", selected = prev_tab)
+                }
               }})  # END if Value, callback, shinyAlert
           
           
@@ -1271,8 +1315,13 @@ server <- function(input, output, session) {
         updateCheckboxInput(session, "ass_valid", value = FALSE)
       }
     } # if not set to true, dont bother
+
+    # §4.E: restore pathway tab selection (see ass_finish for rationale).
+    if (!is.null(prev_tab)) {
+      updateTabsetPanel(session, "pathway_tabset", selected = prev_tab)
+    }
   }, ignoreInit = TRUE)
-  
+
   ## Save general information ----
   observeEvent(input$save_general, {
     
@@ -1292,13 +1341,13 @@ server <- function(input, output, session) {
                             input$ass_reftext,
                             input$ass_notes,
                             assessments$selected$idAssessment))
-    
-    assessments$selected$endDate <- format(now("CET"), "%Y-%m-%d %H:%M:%S")
-    assessments$selected$hosts <- input$ass_hosts
-    assessments$selected$potentialEntryPathways <- input$ass_pot_entry_path_text
-    assessments$selected$references <- input$ass_reftext
-    assessments$selected$notes <- input$ass_notes
-    
+
+    # NOTE: Same rationale as save_answers — no in-memory mirror of fields
+    # that already round-trip through dbReadTable below. (Was previously
+    # invalidating output$questionarie via assessments$selected slot
+    # tracking; Tasks 2-3 isolated those reads, and the mirror was
+    # otherwise unused.)
+
     assessments$data <- dbReadTable(con(), "assessments")
     # assessments$selected <- assessments$data[input$assessments_rows_selected, ]
     # 
@@ -1343,29 +1392,21 @@ server <- function(input, output, session) {
     current_pathways <- names(assessments$entry)
     paths_to_add <- setdiff(selected_pathways, current_pathways) |> as.integer()
     paths_to_remove <- setdiff(current_pathways, selected_pathways) |> as.integer()
-    
+
     # Add new pathways
     if (length(paths_to_add) > 0) {
       for (path_id in paths_to_add) {
         dbExecute(con(), "INSERT INTO entryPathways(idAssessment, idPathway) VALUES(?, ?)",
                   params = list(assessments$selected$idAssessment, path_id))
       }
-      # updateTabsetPanel(session, "questionarie_tab", selected = tab_now)
     } # end add
-    
-    selected_entries <- dbGetQuery(con(), glue("SELECT * FROM entryPathways 
-                                               WHERE idAssessment = {assessments$selected$idAssessment}"))
-    if (nrow(selected_entries) > 0) {
-      assessments$entry <- vector(mode = "list", length = nrow(selected_entries))
-      names(assessments$entry) <- selected_entries$idPathway
-    } else {
-      assessments$entry <- NULL
-    }
-    
-    # Remove unchecked pathways
+
+    # Remove unchecked pathways (must happen BEFORE the re-query below so
+    # selected_entries reflects the post-mutation state).
+    pathways_were_removed <- FALSE
     if (length(paths_to_remove) > 0) {
       for (path_id in paths_to_remove) {
-        idEntryPath <- dbGetQuery(con(), "SELECT idEntryPathway FROM entryPathways 
+        idEntryPath <- dbGetQuery(con(), "SELECT idEntryPathway FROM entryPathways
                                  WHERE idAssessment = ? AND idPathway = ?",
                                   params = list(assessments$selected$idAssessment, path_id)) |>
           pull(idEntryPathway)
@@ -1374,11 +1415,41 @@ server <- function(input, output, session) {
                   params = list(idEntryPath))
         dbExecute(con(), "DELETE FROM entryPathways WHERE idEntryPathway = ?",
                   params = list(idEntryPath))
-        
       }
-      updateTabsetPanel(session, "all_assessments", selected = "all")
-      proxyassessments |> selectRows(NULL)  
+      pathways_were_removed <- TRUE
     } # end remove
+
+    # Re-query AFTER both adds and removes so selected_entries is accurate.
+    selected_entries <- dbGetQuery(con(), glue("SELECT * FROM entryPathways
+                                               WHERE idAssessment = {assessments$selected$idAssessment}"))
+    if (nrow(selected_entries) > 0) {
+      assessments$entry <- vector(mode = "list", length = nrow(selected_entries))
+      names(assessments$entry) <- selected_entries$idPathway
+
+      # §4.D: refresh answers$entry to match the post-mutation entryPathways
+      # set. After Task 3, output$questionariePath reads answers$entry via
+      # isolate(); the tabset rebuild (triggered by the assessments$entry
+      # assignment above) reads whatever is in answers$entry at that moment.
+      # Without this refresh, rows for just-deleted pathways would still be
+      # present and would seed the rebuilt UI with stale data.
+      answers$entry <- dbGetQuery(con(), glue("SELECT pa.*, ep.idAssessment, ep.idPathway
+                                                FROM pathwayAnswers AS pa
+                                                LEFT JOIN entryPathways AS ep
+                                                  ON pa.idEntryPathway = ep.idEntryPathway
+                                                WHERE pa.idEntryPathway IN
+                                                  ({paste(selected_entries$idEntryPathway, collapse = ', ')})")) |>
+        mutate(across(c(min, likely, max), ~ if_else(.x == "", NA_character_, .x)))
+    } else {
+      assessments$entry <- NULL
+      answers$entry <- NULL
+    }
+
+    # Preserve existing UX: if pathways were removed, bump user back to the
+    # assessment list (the questionarie may now refer to removed tabs).
+    if (pathways_were_removed) {
+      updateTabsetPanel(session, "all_assessments", selected = "all")
+      proxyassessments |> selectRows(NULL)
+    }
     
     shinyalert(
       title = "Success",
@@ -1480,10 +1551,16 @@ server <- function(input, output, session) {
                params = list(format(now("CET"), "%Y-%m-%d %H:%M:%S"),
                              input$ass_reftext,
                              assessments$selected$idAssessment))
-     
-     assessments$selected$endDate <- format(now("CET"), "%Y-%m-%d %H:%M:%S")
-     assessments$selected$reference <- input$ass_reftext
-     
+
+     # NOTE: We do not mirror endDate / reference into assessments$selected
+     # in-memory. Mastering Shiny Ch. 14: reactiveValues slot writes
+     # propagate as reference semantics, so this used to invalidate
+     # output$questionarie. Tasks 2-3 isolated those reads, so the
+     # invalidation is gone — but the mirror was also redundant
+     # (assessments$data is refreshed below; nothing else reads
+     # assessments$selected$endDate / $reference between save and the next
+     # selection). Removing both write and downstream read.
+
      assessments$data <- dbReadTable(con(), "assessments")
      # assessments$selected <- assessments$data[input$assessments_rows_selected, ]
      # assessments$selected <- assessments$selected |> 
@@ -1559,7 +1636,8 @@ server <- function(input, output, session) {
       } # end for main answers
       
     } # end if nrow resmain
-    answers$main <- dbGetQuery(con(), glue("SELECT * FROM answers WHERE idAssessment = {assessments$selected$idAssessment}"))
+    answers$main <- dbGetQuery(con(), glue("SELECT * FROM answers WHERE idAssessment = {assessments$selected$idAssessment}")) |>
+      mutate(across(c(min, likely, max), ~ if_else(.x == "", NA_character_, .x)))
 
     if (!is.null(assessments$entry)) {
       answ_ent_path <- extract_answers_entry(questions$entry, groupTag = "ENT", 
@@ -1623,9 +1701,10 @@ server <- function(input, output, session) {
         } # end if resentry
       } # end if any non null
       answers$entry <- dbGetQuery(con(), glue("SELECT pa.*, ep.idAssessment, ep.idPathway
-                                                FROM pathwayAnswers AS pa 
+                                                FROM pathwayAnswers AS pa
                                                 LEFT JOIN entryPathways AS ep ON pa.idEntryPathway = ep.idEntryPathway
-                                                WHERE pa.idEntryPathway IN ({paste(selected_entries$idEntryPathway, collapse = ', ')})"))
+                                                WHERE pa.idEntryPathway IN ({paste(selected_entries$idEntryPathway, collapse = ', ')})")) |>
+        mutate(across(c(min, likely, max), ~ if_else(.x == "", NA_character_, .x)))
     } # end if entry not null
     
     shinyalert(
