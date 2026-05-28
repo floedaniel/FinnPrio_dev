@@ -7,7 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - May 2026
+
+#### EPPO Global Database GPT Researcher retriever (`python/eppo_gd_retriever.py`)
+
+New custom retriever that supplies the AI-research pipeline with content from `gd.eppo.int` for the species identified by `os.environ["EPPO_CODE"]`:
+- `EPPOGDSearch.search()` returns up to 20 newest EPPO Reporting Service articles (`/reporting/article-{id}`) with full body text, followed by all EPPO PRA Platform document links (`pra.eppo.int/pra/{uuid}`) with synthetic title+URL bodies (the PRA landing pages are JS SPAs and the static HTML contains no usable content)
+- In-process `_CACHE` keyed by uppercase EPPO code — first call per species takes ~12 s for a populated species, every subsequent call within the same process is ~0 ms
+- All HTTP/parse errors soft-fail to `[]` with `WARNING` logs (never propagate)
+- `register()` idempotently monkey-patches `gpt_researcher.actions.retriever.get_retriever` to recognise the name `"eppo_gd"`, avoiding edits to the pip-installed `gpt_researcher` package
+- `populate_finnprio_justifications.py` integrates with four small edits: import + `register()` call, `eppo_gd` appended to the default `RETRIEVER` env (`"tavily, semantic_scholar,pubmed_central,eppo_gd"`), `EPPO_CODE` set inside `process_assessment()` and cleared on early return, `try/finally` around the assessment loop in `main()`
+- ENT3's existing `RETRIEVER = "tavily,mcp"` override naturally excludes `eppo_gd` — correct, since trade data belongs to SSB
+
+### Fixed - May 2026
+
+#### Pathway tab save bug — answers silently dropped, UI jumped to first pathway tab (`server.R`) — 2026-05-28
+
+- **Symptom**: Clicking **Save Answers** on a multi-pathway assessment (a) jumped the pathway tabset back to the first pathway, and (b) silently failed to persist answers for any pathway that was off-screen at the moment of the click. The data simply was not written, and the assessor had no way to know.
+- **Root causes**:
+  - **(A)** `output$questionariePath` built its tabset with `do.call(tabsetPanel, tabs)` — no `id` argument — and the inner `tabPanel(id = x, ...)` passed `id`, which Shiny silently ignores (the correct argument is `value`). Result: the active tab was not exposed as a Shiny input and could not be restored after a re-render.
+  - **(B)** Both `output$questionarie` and `output$questionariePath` took live reactive dependencies on `answers$main` / `answers$entry`. `save_answers` reassigned both reactives after every DB UPSERT, which invalidated the entire questionnaire UI and rebuilt the pathway tabset DOM from scratch — defaulting to the first tab and destroying DT input bindings for off-screen pathway tabs before `extract_answers_entry()` could read them. The write loop then saw `NULL` for those inputs and silently dropped the rows.
+  - **(C)** `save_answers` and `save_general` mutated `assessments$selected$endDate / $reference / $hosts / $potentialEntryPathways / $notes` slot fields after every save. Those slot writes propagated as `reactiveValues` updates and re-invalidated `output$questionarie` (which reads `assessments$selected` as a live dep).
+  - **(D)** In `save_general`, the `selected_entries` re-query ran *before* the pathway DELETE loop, so `assessments$entry` was reassigned to a list that still contained pathways the same handler was about to delete. `answers$entry` was never refreshed at all.
+- **Fix** (six commits on branch `fix/pathway-tab-save-bug`, `3f54591..55464a5`):
+  - **§4.A (`3f54591`)** — `do.call(tabsetPanel, c(tabs, list(id = "pathway_tabset", type = "tabs")))`; inner `tabPanel(value = x, ...)`. Active tab now exposed as `input$pathway_tabset`.
+  - **§4.B (`41fe82a`)** — `output$questionarie` reads `answers$main` once via `current_answers_main <- isolate(answers$main)` near the top of the renderUI; downstream uses the snapshot. Mastering Shiny Ch. 10 pattern (`value <- isolate(input$dynamic)`).
+  - **§4.C (`860b2bb`)** — `output$questionariePath` reads `answers$entry` once via `current_answers_entry <- isolate(answers$entry)`. Same pattern. Eight read sites updated. The secondary DT `Shiny.bindAll` race condition disappears as a side effect because the tabset DOM is no longer torn down on save.
+  - **§4.D (`d84df8d`)** — Removed slot mutations on `assessments$selected` from both `save_answers` and `save_general`; restructured `save_general`'s pathway add/remove flow so DELETEs run *before* the `selected_entries` re-query and both `assessments$entry` and `answers$entry` are refreshed in lockstep from the post-mutation DB state. A `pathways_were_removed` flag gates the existing post-remove `updateTabsetPanel(session, "all_assessments", selected = "all")` / `selectRows(NULL)` UX bump.
+  - **§4.E (`741ed1c`, `55464a5`)** — Both `ass_finish` and `ass_valid` capture `prev_tab <- isolate(input$pathway_tabset)` at the top and call `updateTabsetPanel(session, "pathway_tabset", selected = prev_tab)` near the end, restoring pathway tab selection after the unavoidable `output$questionarie` re-render driven by the `$finished` / `$valid` slot mutations. The `ass_valid` `shinyalert` conflict-callback path also restores from inside the callback (the synchronous restore fires before the async slot mutation in that one sub-case).
+- **Why these fixes**: The Save → DB → reassign-reactive → re-render cycle was fundamentally racing the DOM rebuild against input-binding completion. Switching seed reads to `isolate()` snapshots decouples the renderUI graph from the save-handler write graph: renders fire when the user picks a different assessment or when pathways are added/removed, *not* when answers are saved. Downstream consumers (validation, simulation, report) still read the live reactives without `isolate()` and continue to see fresh DB state.
+- **Files**: `server.R` only. +135 / -61 lines. No changes to `ui.R`, `global.R`, the `R/` helpers, or any Python code.
+- **Design spec**: `docs/superpowers/specs/2026-05-28-pathway-save-bug-design.md` (untracked per project convention). Implementation plan at `docs/superpowers/plans/2026-05-28-pathway-save-bug.md`.
+
 ### Changed - May 2026
+
+#### `STRATEGIC_LLM` upgraded to `openai:o3` (`python/populate_finnprio_justifications.py`)
+- Was `openai:o4-mini`; planning/query selection now uses the production `o3` reasoning model. Per-run cost increases modestly; quality improves on multi-step queries.
 
 #### Master database folder and file renamed for cross-platform compatibility
 - Folder `databases/master database/` (space) renamed to `databases/master_database/` (underscore) — spaces in folder names caused path issues on some platforms

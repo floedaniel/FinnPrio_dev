@@ -345,7 +345,7 @@ Diagnostic and troubleshooting utilities:
 Python scripts for automatically generating justifications and populating min/likely/max values using AI:
 
 **Main Scripts:**
-- `populate_finnprio_justifications.py`: Main script using GPT Researcher for web research; ENT3 attaches the SSB MCP server for trade-volume data (trade pathways only: Seeds, Plants for planting, Wood, Food/fodder, Other living plant parts — Hitchhiking/Natural spread/Intentional introduction skip SSB); IMP1, EST2, and IMP2.2 attach the NIBIO MCP server for Norwegian agricultural production statistics
+- `populate_finnprio_justifications.py`: Main script using GPT Researcher for web research; ENT3 attaches the SSB MCP server for trade-volume data (trade pathways only: Seeds, Plants for planting, Wood, Food/fodder, Other living plant parts — Hitchhiking/Natural spread/Intentional introduction skip SSB); IMP1, EST2, and IMP2.2 attach the NIBIO MCP server for Norwegian agricultural production statistics; registers the `eppo_gd` GPT Researcher retriever at import time (sets `os.environ["EPPO_CODE"]` per assessment)
 - `populate_finnprio_justifications_mcp.py`: MCP server version with caching and persistent connection
 - `populate_finnprio_justifications_anthropic.py`: Claude (Anthropic) version with optimized prompts
 - `populate_finnprio_values.py`: Determines min/likely/max values from justifications
@@ -361,6 +361,9 @@ Python scripts for automatically generating justifications and populating min/li
 **NIBIO Totalkalkylen integration (IMP1, EST2, IMP2.2):**
 - `nibio_query_lib.py`: Pure NIBIO Totalkalkylen API helper functions (no AI SDK). Three functions: `nibio_list_groups`, `nibio_list_posts`, `nibio_get_data`. Returns 68-year production time series (1959–2026) with kvantum (Tonn), pris (Kr/100 kg), verdi (1000 kr).
 - `nibio_mcp_server.py`: FastMCP 3.x server exposing three tools (`list_groups`, `list_posts`, `get_data`). Launched as stdio subprocess for IMP1, EST2, and IMP2.2 regular questions. Key groups: 2606=Korn, 2607=Poteter, 2608=Hagebruksprodukter, 2641=Jordbruksareal (daa by crop type).
+
+**EPPO Global Database retriever (all non-ENT3 questions):**
+- `eppo_gd_retriever.py`: GPT Researcher retriever that scrapes `gd.eppo.int` for the species identified by `os.environ["EPPO_CODE"]`. Returns up to 20 newest Reporting Service articles (`/reporting/article-{id}` with body text) + all EPPO PRA Platform document links (`pra.eppo.int/pra/{uuid}` as synthetic title+URL bodies, since the PRA landing pages are JS SPAs with no SSR content). In-process cache keyed by EPPO code so per-assessment cost is one round-trip. `register()` monkey-patches `gpt_researcher.actions.retriever.get_retriever` at import time — no edits to the pip-installed `gpt_researcher` package. ENT3's `RETRIEVER` override (`"tavily,mcp"`) naturally excludes `eppo_gd`, which is correct.
 
 **Instructions System (v2.0):**
 - `parse_rmd_instructions.py`: Parses Rmd to structured JSON with options and guidance
@@ -386,12 +389,20 @@ See `python/README.md` for detailed documentation and `python/CHANGELOG.md` for 
 - `SSB_PATHWAYS` set in `populate_finnprio_justifications.py` gates SSB activation: keywords `"seeds"`, `"plants for planting"`, `"wood"`, `"food"`, `"fodder"`, `"living plant"` — Hitchhiking, Natural spread, Intentional introduction never trigger SSB
 - `toll_search_hs_codes()` downloads `customstariffstructure.xml` on first call and caches it in `python/`; subsequent calls use the in-memory index — no re-download during a pipeline run
 
+**EPPO GD retriever gotchas** (relevant to `eppo_gd_retriever.py` + `populate_finnprio_justifications.py`):
+- `gpt-researcher` is pip-installed under `python/.venv/Lib/site-packages/`, not a local clone — do NOT edit files inside the venv; `register()` runtime monkey-patch is the only correct integration path
+- `EPPO_CODE` env var is the species channel; set inside `process_assessment()` from `assessment_info['eppoCode']`, popped in `main()`'s `finally`, AND cleared in `process_assessment()`'s early-return guard so a stale code never leaks across assessments
+- Default `RETRIEVER` is `"tavily, semantic_scholar,pubmed_central,eppo_gd"`; ENT3 swaps to `"tavily,mcp"` and restores in `finally` (the `eppo_gd` exclusion for ENT3 is intentional — trade data comes from SSB)
+- PRA Platform landing pages (`pra.eppo.int/pra/{uuid}`) are JavaScript-rendered SPAs — `requests.get` returns only the JS-disabled placeholder shell. The retriever therefore emits a synthetic body `f"EPPO PRA Platform document: {title}\nURL: {url}"` instead of fetching the page. PRA titles already include species, sector, year (`"Commodity risk assessment of oak and walnut logs from the US [EU, 2025-11-20]"`).
+- The "Found in EPPO PRA Platform" heading on `gd.eppo.int/taxon/{code}/eppolinks` is a `<div class="process-meta"><span>`, not a conventional h2/h3/h4 — the retriever uses `soup.find_all(True)` + ancestor walk to find the section root
+- `_CACHE` is process-scoped only; one populate run shares cached results across all of a species' questions, but a re-run re-fetches
+
 **`gpt_researcher` API gotchas** (relevant to `Populate_finprio_justifications_deep.py`):
 - `Tone` enum: `from gpt_researcher.utils.enum import Tone`
 - `report_source` takes a string literal: `"web"` / `"local"` / `"hybrid"`
 - `conduct_research(on_progress=cb)`: callback is called **synchronously** — must be `def`, not `async def`
 - `ResearchProgress` attrs: `current_depth`, `total_depth`, `current_breadth`, `total_breadth`, `current_query`, `completed_queries`, `total_queries`
-- Deep research requires `report_type="deep"` + reasoning `STRATEGIC_LLM` (e.g. `openai:o4-mini`); tune via `DEEP_RESEARCH_BREADTH/DEPTH/CONCURRENCY` + `TOTAL_WORDS`
+- Deep research requires `report_type="deep"` + reasoning `STRATEGIC_LLM` (e.g. `openai:o3` for production, `openai:o4-mini` for cheaper experiments); tune via `DEEP_RESEARCH_BREADTH/DEPTH/CONCURRENCY` + `TOTAL_WORDS`
 - `FAST_/SMART_/STRATEGIC_TOKEN_LIMIT` are per-role output caps (not a shared budget); `LLM_MAX_TOKENS` is NOT a recognized env var
 - No native domain-exclusion API; exclusions rely on prompt text + post-hoc regex scrubbing
 
