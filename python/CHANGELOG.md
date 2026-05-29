@@ -7,6 +7,63 @@ All notable changes to the Python AI enhancement scripts.
 
 ---
 
+## [2026-05-29] - Codebase housekeeping: legacy quarantine, DAG audit, SSB Ch 44 fix
+
+### Changed
+
+- **Legacy scripts quarantined to `python/legacy/`** — Eight experimental/obsolete
+  justification script variants and the vendored `gptr-mcp-master/` folder moved
+  out of the active `python/` namespace. No file contents changed; no active script
+  imports from any of them. Canonical production scripts remain at the root:
+  `populate_finnprio_justifications.py` and `populate_finnprio_values.py`.
+  Moved: `populate_finnprio_justifications_anthropic.py`,
+  `populate_finnprio_justifications_hybrid.py`,
+  `populate_finnprio_justifications_local.py`,
+  `populate_finnprio_justifications_local_fast.py`,
+  `populate_finnprio_justifications_mcp.py`,
+  `populate_finnprio_justifications_unified.py`,
+  `Populate_finprio_justifications_deep.py`, `Simple_run.py`,
+  `gptr-mcp-master/`.
+
+- **`README.md` rewritten** — Replaced the 416-line outdated document with a
+  100-line focused reference covering workflow, active scripts, quick-start
+  commands, configuration variable names, and a troubleshooting table. All legacy
+  script references and stale content removed.
+
+### Fixed
+
+- **`dag_config.py` — six Rmd-traced dependency corrections** (audit against
+  `information/Instructions_FinnPRIO_assessments.Rmd`):
+  - `QUESTION_DEPENDENCIES["EST1"]`: removed `"ENT1"` — EST1 assesses Norwegian
+    climate suitability; global range is not a stated factor in the Rmd.
+  - `QUESTION_DEPENDENCIES["ENT4"]`: removed `"ENT3"` — Rmd ENT4 guidance
+    references season and destination/use of commodity, not trade volume.
+  - `QUESTION_DEPENDENCIES["MAN1"]`: kept `["ENT1"]`; added comment that ENT1 is
+    weak ordering context and that the stronger prior (ENT2A natural spread
+    pathway) would require cross-table wiring not currently supported.
+  - `QUESTION_DEPENDENCIES["MAN4"]`: kept `[]`; added uncertainty flag comment
+    (possible EST1 connection not explicit in Rmd).
+  - `QUESTION_DEPENDENCIES["MAN5"]`: added `"EST2"` — Rmd MAN5 guidance
+    explicitly lists "Abundance and distribution of host plants" = EST2.
+  - `PATHWAY_DEPENDENCIES["ENT4"]`: removed `"ENT3"` — same rationale as
+    `QUESTION_DEPENDENCIES["ENT4"]`; volume of imports does not determine
+    habitat transfer probability.
+
+- **SSB Ch 44 exclusion list** (`ssb_query_lib.py`, `ssb_mcp_server.py`,
+  `standalone_ssb_MPC.py`) — highly processed wood products with no viable plant
+  pest pathway are now filtered out of all SSB trade queries. Excluded headings:
+  4402 (charcoal), 4405 (wood wool/flour), 4406 (railway sleepers —
+  typically heat-treated/preserved), 4408 (veneer sheets ≤6 mm), 4409
+  (continuously shaped/parquet), 4410 (particleboard/OSB), 4411 (fibreboard/MDF),
+  4412 (plywood/laminated), 4413 (densified wood), 4416–4421 (finished articles).
+  Implementation: `_EXCLUDED_WOOD_HEADINGS` frozenset in `ssb_query_lib.py`
+  hard-filters these from `toll_search_hs_codes()` results; docstrings in all
+  three files updated to document the exclusion. Retained for plant health queries:
+  4401 (fuel wood), 4403 (roundwood), 4404 (split poles), 4407 (sawnwood),
+  4415 (packaging wood — ISPM 15 regulated).
+
+---
+
 ## [2026-05-19] - SSB MCP Integration for ENT3 + DAG Validation Schema Fix
 
 ### Added
