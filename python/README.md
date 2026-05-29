@@ -1,17 +1,10 @@
 # FinnPRIO AI Enhancement Scripts
 
+> For Shiny application documentation, see [../README.md](../README.md).
+
 Python scripts for automatically generating justifications and populating min/likely/max values for FinnPRIO risk assessments using AI.
 
 ## 📁 Scripts
-
-### Unified Script (Recommended)
-| Script | Purpose | Cost |
-|--------|---------|------|
-| `populate_finnprio_justifications_unified.py` | **EPPO + GPT Researcher combined** | ~$0.10-0.50/question |
-
-The unified script combines two complementary data sources:
-- **EPPO MCP Server** - Authoritative structured data (distribution, hosts, regulatory status)
-- **GPT Researcher MCP** - Scientific literature and web research
 
 ### Cloud/Paid Scripts
 | Script | Purpose | Cost |
@@ -101,81 +94,11 @@ python instructions_loader.py
 
 ## 🔄 Workflow
 
-### Recommended: Unified Script
-```
-SOURCE DATABASE → Unified Script → VALUES Script → COMPLETE DATABASE
-                  (EPPO + GPTR)    (GPT-4o-mini)   (Ready for app)
-```
-
-1. **Generate Justifications** - Run `populate_finnprio_justifications_unified.py`
-2. **Generate Values** - Run `populate_finnprio_values.py` on the enhanced database
-3. **Use in App** - Load the complete database in FinnPRIO Assessor
-
-### Alternative: GPT Researcher Only
+### Standard Workflow
 ```
 SOURCE DATABASE → Justifications Script → VALUES Script → COMPLETE DATABASE
                   (GPT Researcher)       (GPT-4o-mini)   (Ready for app)
 ```
-
----
-
-## 🌟 Unified Script (Recommended)
-
-### `populate_finnprio_justifications_unified.py`
-
-**"One script to bind them all"** - Combines EPPO and GPT Researcher for comprehensive justifications.
-
-**Architecture:**
-```
-┌─────────────────────────────────────────────────────────┐
-│              Unified Orchestrator                       │
-└───────────────────────┬─────────────────────────────────┘
-                        │
-        ┌───────────────┴───────────────┐
-        ▼                               ▼
-┌───────────────────┐         ┌───────────────────────┐
-│   EPPO MCP Server │         │   GPT Researcher MCP  │
-│                   │         │                       │
-│ • Distribution    │         │ • Scientific papers   │
-│ • Hosts           │         │ • Recent outbreaks    │
-│ • Categorization  │         │ • Management studies  │
-│ • Regulatory      │         │ • Climate modeling    │
-│                   │         │                       │
-│ AUTHORITATIVE     │         │ CONTEXTUAL            │
-└───────────────────┘         └───────────────────────┘
-```
-
-**Features:**
-- Parallel MCP server connections
-- EPPO data as reliable foundation (cached 7 days)
-- GPT Researcher for broader scientific context
-- Smart query building with EPPO context
-- Graceful fallback (EPPO down → research only)
-- Question-specific EPPO data mapping
-
-**Question → EPPO Data Mapping:**
-| Question | EPPO Data Used |
-|----------|----------------|
-| ENT1 | Distribution, Categorization |
-| EST1-3 | Distribution, Hosts |
-| EST4 | Hosts, Vectors |
-| IMP1-4 | Hosts |
-| MAN1-3 | Distribution, Categorization |
-| MAN4-5 | Biological Control Agents |
-
-**Usage:**
-```bash
-# Process specific EPPO codes
-python populate_finnprio_justifications_unified.py --eppo-codes XYLEFA ANOLGL
-
-# Process single assessment
-python populate_finnprio_justifications_unified.py --assessment-id 1
-
-# Process all assessments
-python populate_finnprio_justifications_unified.py
-```
-
-**Output:** `original_name_unified_DD_MM_YYYY.db`
 
 ---
 
@@ -343,46 +266,6 @@ Determines min/likely/max values based on existing justifications.
 
 ---
 
-### Utility Scripts
-
-#### `close_all_connections.py`
-Closes all database connections and clears locks.
-
-**Use when:**
-- Getting "database is locked" errors
-- Need to reset database connections
-- Cleaning up after interrupted scripts
-
----
-
-#### `check_missing_values.py`
-Checks which questions have justifications but missing values.
-
-**Output:** Lists questions needing value population by type.
-
----
-
-#### `check_pathway_values.py`
-Detailed check of pathway answers status.
-
-**Output:** Shows pathway answers with/without justifications and values.
-
----
-
-#### `check_selected_pathways.py`
-Shows which pathways are selected in each assessment.
-
-**Output:** Lists assessments and their entry pathways.
-
----
-
-#### `check_wood_pathway.py`
-Specific check for wood and wood products pathway.
-
-**Output:** Status of wood pathway answers across assessments.
-
----
-
 ## ⚙️ Configuration
 
 ### API Keys
@@ -401,7 +284,7 @@ C:\Users\dafl\Desktop\API keys\
 
 ### Configuration Options
 
-#### `populate_finnprio_justifications_v3.py`
+#### `populate_finnprio_justifications.py`
 
 ```python
 # SKIP EXISTING JUSTIFICATIONS
@@ -455,7 +338,7 @@ os.environ.update({
 cd python
 
 # Step 1: Generate justifications for all assessments
-python populate_finnprio_justifications_v3.py
+python populate_finnprio_justifications.py
 
 # Step 2: Generate values for all assessments
 python populate_finnprio_values.py --db outputs/ai_test_ai_enhanced_03_02_2026.db
@@ -467,7 +350,7 @@ python populate_finnprio_values.py --db outputs/ai_test_ai_enhanced_03_02_2026.d
 
 ```bash
 # Process only assessment ID 2
-python populate_finnprio_justifications_v3.py --assessment-id 2
+python populate_finnprio_justifications.py --assessment-id 2
 python populate_finnprio_values.py --assessment-id 2
 ```
 
@@ -475,7 +358,7 @@ python populate_finnprio_values.py --assessment-id 2
 
 ### Command Line Options
 
-#### `populate_finnprio_justifications_v3.py`
+#### `populate_finnprio_justifications.py`
 ```bash
 --db PATH                    # Source database path
 --output PATH                # Output directory
@@ -507,7 +390,7 @@ SKIP_EXISTING_VALUES = False         # Overwrite existing
 
 **Or via command line:**
 ```bash
-python populate_finnprio_justifications_v3.py --overwrite
+python populate_finnprio_justifications.py --overwrite
 python populate_finnprio_values.py --overwrite
 ```
 
@@ -516,33 +399,19 @@ python populate_finnprio_values.py --overwrite
 ## 🔧 Troubleshooting
 
 ### "Database is locked" Error
-```bash
-# Close all connections
-python close_all_connections.py
-```
+- Close the database in DB Browser or any other SQLite client that has it open
+- Restart the script
 
 ### "No such table: answers" Error
 - Check database has correct schema
 - Verify database path is correct
-- Close all connections and retry
 
 ### Pathway Answers Not Created
-```bash
-# Check if pathways are selected
-python check_selected_pathways.py
-
-# Verify pathway answers exist
-python check_pathway_values.py
-```
+- Ensure pathways are selected in the `entryPathways` table in the source database
+- Verify pathway answers exist by inspecting `pathwayAnswers` directly
 
 ### No Values Being Populated
-```bash
-# Check what's missing
-python check_missing_values.py
-
-# Justifications must exist first!
-# Run populate_finnprio_justifications_v3.py before populate_finnprio_values.py
-```
+- Justifications must exist first — run `populate_finnprio_justifications.py` before `populate_finnprio_values.py`
 
 ---
 
