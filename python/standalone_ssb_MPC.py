@@ -167,7 +167,6 @@ SYSTEM_PROMPT = dedent("""\
           .91 oak, .92 beech, .95/.96 birch, .97 poplar,
           .99 other non-coniferous
       - 4404: Split poles and stakes — bark retention likely
-      - 4406: Railway/tramway sleepers — regulated timber
       - 4407: Sawnwood (thickness >6 mm) — debarked but regulated;
           genus-level subcodes: .91 oak, .92 beech, .93 maple,
           .94 cherry/Prunus, .95 ash, .96 birch, .97 poplar,
@@ -181,6 +180,8 @@ SYSTEM_PROMPT = dedent("""\
       - 4405: Wood wool / wood flour (ground to particles)
       - 4408: Veneer sheets ≤6 mm (sliced/peeled, no bark)
       - 4409: Continuously shaped wood — parquet strips, mouldings
+      - 4406: Railway/tramway sleepers — typically heat-treated or
+          preserved; negligible phytosanitary risk in practice
       - 4410: Particleboard, OSB, waferboard
       - 4411: Fibreboard (MDF, HDF, softboard)
       - 4412: Plywood and laminated wood

@@ -45,10 +45,11 @@ def search_tables(query: str, lang: str = "en") -> str:
     - Ch 12: Oil seeds, plants, straw, fodder
     - Ch 44: Wood — raw/minimally processed codes only (genuine pest
         pathway): 4401 fuel wood, 4403 roundwood, 4404 poles/stakes,
-        4406 sleepers, 4407 sawnwood, 4415 packaging wood (ISPM 15).
-        Do NOT query: 4408 veneer, 4409 shaped/parquet, 4410 OSB/
-        particleboard, 4411 fibreboard/MDF, 4412 plywood/laminated,
-        4413+ finished articles — highly processed, no pest pathway.
+        4407 sawnwood, 4415 packaging wood (ISPM 15).
+        Do NOT query: 4406 sleepers (heat-treated/preserved), 4408
+        veneer, 4409 shaped/parquet, 4410 OSB/particleboard, 4411
+        fibreboard/MDF, 4412 plywood/laminated, 4413+ finished
+        articles — highly processed or treated, no pest pathway.
     """
     return ssb_search_tables(query, lang)
 
@@ -103,9 +104,11 @@ def query_data(table_id: str, selection: list, lang: str = "en") -> str:
           via 440310/440320/440391)
       Sawnwood 4407: .91-.99 mirrors 4403 at genus level
       Packaging wood 4415: crates, pallets (ISPM 15 regulated)
-      Fuel wood 4401; split poles 4404; sleepers 4406
+      Fuel wood 4401; split poles 4404
 
-      DO NOT query these highly processed codes (no bark, no pest risk):
+      DO NOT query these codes (highly processed, treated, or no pest risk):
+        4406 railway sleepers (typically heat-treated or chemically
+        preserved — negligible phytosanitary risk in practice),
         4408 veneer sheets, 4409 shaped/parquet wood,
         4410 particleboard/OSB, 4411 fibreboard/MDF,
         4412 plywood/laminated wood, 4413 densified wood,
@@ -148,10 +151,10 @@ def search_tariff_codes(query: str, chapters: list = None) -> str:
     - "10": Cereals (wheat, barley, oats, rye, maize)
     - "12": Oil seeds, straw, fodder plants
     - "44": Wood — raw/minimally processed only (4401 fuel wood,
-        4403 roundwood, 4404 poles, 4406 sleepers, 4407 sawnwood,
-        4415 packaging). Highly processed products (4408 veneer,
-        4410 OSB, 4411 MDF, 4412 plywood, 4413+ articles) are
-        auto-excluded — they carry no viable plant pest pathway.
+        4403 roundwood, 4404 poles, 4407 sawnwood, 4415 packaging).
+        Excluded: 4406 sleepers (heat-treated/preserved), 4408 veneer,
+        4410 OSB, 4411 MDF, 4412 plywood, 4413+ articles — all
+        carry no viable plant pest pathway.
 
     Examples:
     - search_tariff_codes("potato")       → 07011000, 07019011, 07019018 …

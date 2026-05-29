@@ -45,7 +45,7 @@ _PLANT_CHAPTERS = {
 # is in scope, so only raw/minimally-processed wood codes are returned.
 #
 # INCLUDED (genuine pest pathway): 4401 fuel wood, 4403 roundwood,
-#   4404 split poles/stakes, 4406 railway sleepers, 4407 sawnwood,
+#   4404 split poles/stakes, 4407 sawnwood,
 #   4415 packaging wood (crates/pallets — ISPM 15 regulated)
 #
 # EXCLUDED (negligible phytosanitary risk):
@@ -57,6 +57,7 @@ _EXCLUDED_WOOD_HEADINGS: frozenset = frozenset({
     "4410",  # Particleboard, OSB, waferboard
     "4411",  # Fibreboard (MDF, HDF, softboard)
     "4412",  # Plywood and laminated wood
+    "4406",  # Railway/tramway sleepers — typically heat-treated or preserved
     "4413",  # Densified wood blocks and profiles
     "4416",  # Casks and barrels (coopers' products)
     "4417",  # Tools and tool handles of wood
@@ -128,7 +129,7 @@ def toll_search_hs_codes(query: str, chapters: list | None = None,
     4410 (particleboard/OSB), 4411 (fibreboard/MDF), 4412 (plywood),
     4413 (densified wood), 4416-4421 (finished articles). Only raw/
     minimally processed codes with bark retention or ISPM 15 relevance
-    are returned: 4401, 4403, 4404, 4406, 4407, 4415.
+    are returned: 4401, 4403, 4404, 4407, 4415.
     """
     records = _build_toll_index()
     query_lower = query.lower()
