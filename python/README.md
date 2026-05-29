@@ -6,27 +6,17 @@ Python scripts for automatically generating justifications and populating min/li
 
 ## 📁 Scripts
 
-### Cloud/Paid Scripts
+### Scripts
 | Script | Purpose | Cost |
 |--------|---------|------|
 | `populate_finnprio_justifications.py` | Generate justifications using GPT Researcher | ~$0.10-0.50/question |
-| `populate_finnprio_justifications_mcp.py` | MCP server version (caching) | ~$0.10-0.50/question |
-| `populate_finnprio_justifications_anthropic.py` | Generate justifications using Claude | ~$0.10-0.50/question |
-| `populate_finnprio_justifications_hybrid.py` | Hybrid: web research + local PDF documents from Species/{EPPO_CODE}/ | ~$0.10-0.50/question |
 | `populate_finnprio_values.py` | Determine min/likely/max values | ~$0.01/question |
+| `populate_finnprio_values_local.py` | Values with Ollama (free, local) | **$0.00** |
 
 ### MCP Servers
 | Server | Purpose |
 |--------|---------|
 | `servers/eppo_mcp_server.py` | EPPO Global Database API with caching and rate limiting |
-| `ssb_mcp_server.py` | SSB Statistics Norway trade data (PxWebApi v2) — launched for ENT3 |
-| `ssb_query_lib.py` | Shared pure-function library used by `ssb_mcp_server.py` and `standalone_ssb_MPC.py` |
-
-### Local/FREE Scripts (Ollama)
-| Script | Purpose | Cost |
-|--------|---------|------|
-| `populate_finnprio_justifications_local.py` | Justifications with Ollama + DuckDuckGo | **$0.00** |
-| `populate_finnprio_values_local.py` | Values with Ollama | **$0.00** |
 
 ### Utilities
 | Script | Purpose |
@@ -156,74 +146,6 @@ Main script for generating AI-powered scientific justifications.
 - Skip existing justifications option
 
 **Output:** `original_name_ai_enhanced_DD_MM_YYYY.db`
-
----
-
-### `populate_finnprio_justifications_mcp.py`
-MCP server version with additional benefits.
-
-**Benefits over standard version:**
-- Caching of research results
-- Persistent server connection
-- Multiple tools (deep_research, quick_search)
-
-**Requires:** `gptr-mcp-master/` server and `fastmcp` package
-
----
-
-### `populate_finnprio_justifications_anthropic.py`
-Best of both worlds: GPT Researcher + Claude (Anthropic).
-
-**Features:**
-- GPT Researcher for comprehensive web research (multiple iterations, source synthesis)
-- Claude 3.5 Sonnet as the reasoning/writing LLM (superior scientific synthesis)
-- Claude 3.5 Haiku for fast intermediate tasks
-- Tavily API for web search
-- Same proven workflow as the OpenAI version, but with Claude's reasoning
-
-**Configuration:**
-```python
-# GPT Researcher uses these Claude models:
-"SMART_LLM": "anthropic:claude-sonnet-4-20250514"   # Final reports
-"FAST_LLM": "anthropic:claude-3-5-haiku-20241022"   # Summaries
-"STRATEGIC_LLM": "anthropic:claude-sonnet-4-20250514"  # Planning
-```
-
-**API Keys:** Requires `anthropic_key.txt` and `Tavily_key.txt`
-
-**Output:** `original_name_anthropic_DD_MM_YYYY.db`
-
----
-
-## 🆓 FREE Local Scripts (Ollama)
-
-### `populate_finnprio_justifications_local.py`
-**100% FREE** - Uses Ollama (local LLM) + DuckDuckGo (free search).
-
-**Features:**
-- GPT Researcher with Ollama backend
-- DuckDuckGo for web search (no API key!)
-- Reduced research parameters for laptop performance
-- Same output format as paid version
-
-**Requirements:**
-```bash
-# Install Ollama from https://ollama.com
-ollama pull llama3.2
-ollama pull phi3:3.8b-mini-128k-instruct
-ollama pull nomic-embed-text
-ollama serve
-```
-
-**Configuration:**
-```python
-# Models (choose based on RAM)
-FAST_LLM = "ollama:phi3:3.8b-mini-128k-instruct"  # 8GB RAM
-SMART_LLM = "ollama:llama3.2"                      # 8GB RAM
-# SMART_LLM = "ollama:qwen2:7b"                    # 16GB+ RAM
-```
-
-**Output:** `original_name_local_DD_MM_YYYY.db`
 
 ---
 
