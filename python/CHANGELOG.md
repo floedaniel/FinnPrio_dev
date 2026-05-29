@@ -1,5 +1,8 @@
 # Changelog - FinnPRIO AI Enhancement Scripts
 
+> Covers Python pipeline technical detail.
+> For R/Shiny and project-level changes see [../CHANGELOG.md](../CHANGELOG.md).
+
 All notable changes to the Python AI enhancement scripts.
 
 ---
