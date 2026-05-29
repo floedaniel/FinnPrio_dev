@@ -38,7 +38,7 @@ QUESTION_DEPENDENCIES = {
     "MAN3":   [],
     "MAN4":   [],              # Possible EST1 dep (outdoor spread context) but not explicit
                                # in Rmd. Flagged 2026-05-29 — do not add without Rmd citation.
-    "MAN5":   ["EST3", "EST2"],# EST3 = spread rate (Rmd: "Pest's natural potential to spread");
+    "MAN5":   ["EST3", "EST2"], # EST3 = spread rate (Rmd: "Pest's natural potential to spread");
                                # EST2 = host distribution (Rmd: "Abundance and distribution of
                                # host plants"). Both explicitly listed in MAN5 guidance.
 }
