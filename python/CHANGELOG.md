@@ -11,11 +11,11 @@ All notable changes to the Python AI enhancement scripts.
 
 ### Changed
 
-- **Legacy scripts quarantined to `python/legacy/`** — Eight experimental/obsolete
-  justification script variants and the vendored `gptr-mcp-master/` folder moved
-  out of the active `python/` namespace. No file contents changed; no active script
-  imports from any of them. Canonical production scripts remain at the root:
-  `populate_finnprio_justifications.py` and `populate_finnprio_values.py`.
+- **Legacy scripts quarantined to `python/legacy/`** — Nine scripts and the
+  vendored `gptr-mcp-master/` folder moved out of the active `python/` namespace.
+  No file contents changed; no active script imports from any of them. Canonical
+  production scripts remain at the root: `populate_finnprio_justifications.py`
+  and `populate_finnprio_values.py`.
   Moved: `populate_finnprio_justifications_anthropic.py`,
   `populate_finnprio_justifications_hybrid.py`,
   `populate_finnprio_justifications_local.py`,
@@ -23,7 +23,7 @@ All notable changes to the Python AI enhancement scripts.
   `populate_finnprio_justifications_mcp.py`,
   `populate_finnprio_justifications_unified.py`,
   `Populate_finprio_justifications_deep.py`, `Simple_run.py`,
-  `gptr-mcp-master/`.
+  `populate_finnprio_values_local.py`, `gptr-mcp-master/`.
 
 - **`README.md` rewritten** — Replaced the 416-line outdated document with a
   100-line focused reference covering workflow, active scripts, quick-start

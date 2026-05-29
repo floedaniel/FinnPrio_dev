@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - May 2026
+
+#### Python codebase housekeeping — 2026-05-29
+- **Legacy scripts quarantined**: nine obsolete justification/values variants and `gptr-mcp-master/` moved to `python/legacy/`; canonical scripts are now `populate_finnprio_justifications.py` and `populate_finnprio_values.py` only.
+- **`dag_config.py` dependency audit**: six question-dependency corrections sourced from `information/Instructions_FinnPRIO_assessments.Rmd` — EST1 no longer depends on ENT1, ENT4 (both tables) no longer depends on ENT3, MAN5 gains EST2 dependency, MAN1/MAN4 annotated with rationale comments.
+- **SSB Ch 44 exclusion list**: highly processed wood products (charcoal, veneer, particleboard, plywood, fibreboard, finished articles, railway sleepers) excluded from all SSB trade queries in `ssb_query_lib.py`, `ssb_mcp_server.py`, and `standalone_ssb_MPC.py`. Raw/minimally processed codes retained (roundwood, sawnwood, fuel wood, packaging).
+- **`python/README.md` rewritten**: reduced from 416 to 100 lines; accurate script inventory, workflow, and quick-start commands.
+
 ### Fixed - May 2026
 
 #### Pathway tab save bug — answers silently dropped, UI jumped to first pathway tab (`server.R`) — 2026-05-28
