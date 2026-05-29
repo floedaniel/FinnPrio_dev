@@ -159,13 +159,34 @@ SYSTEM_PROMPT = dedent("""\
     - Ch 08: Edible fruit and nuts
     - Ch 10: Cereals
     - Ch 12: Oil seeds, plants, straw, fodder
-    - Ch 44: Wood and articles of wood
-      - 4403: Roundwood (genus-level codes: .91 oak, .92 beech,
-        .95/.96 birch, .97 poplar, .99 other non-coniferous)
-      - 4407: Sawnwood (genus-level: .91 oak, .92 beech, .93 maple,
-        .94 cherry/Prunus, .95 ash, .96 birch, .97 poplar,
-        .99 other non-coniferous)
-      - 4415: Packaging wood (crates, pallets)
+    - Ch 44: Wood and articles of wood — PLANT HEALTH RELEVANCE
+      Only the following codes represent genuine pest-entry pathways
+      (bark present, or regulated under ISPM 15); query ONLY these:
+      - 4401: Fuel wood — bark often intact; bark beetle vector risk
+      - 4403: Roundwood — primary high-risk code; genus-level subcodes:
+          .91 oak, .92 beech, .95/.96 birch, .97 poplar,
+          .99 other non-coniferous
+      - 4404: Split poles and stakes — bark retention likely
+      - 4406: Railway/tramway sleepers — regulated timber
+      - 4407: Sawnwood (thickness >6 mm) — debarked but regulated;
+          genus-level subcodes: .91 oak, .92 beech, .93 maple,
+          .94 cherry/Prunus, .95 ash, .96 birch, .97 poplar,
+          .99 other non-coniferous
+      - 4415: Packaging wood (crates, pallets) — ISPM 15 regulated
+
+      DO NOT query or report the following codes — they are highly
+      processed products with negligible phytosanitary risk (no bark,
+      no viable pest pathway):
+      - 4402: Charcoal (heat-killed)
+      - 4405: Wood wool / wood flour (ground to particles)
+      - 4408: Veneer sheets ≤6 mm (sliced/peeled, no bark)
+      - 4409: Continuously shaped wood — parquet strips, mouldings
+      - 4410: Particleboard, OSB, waferboard
+      - 4411: Fibreboard (MDF, HDF, softboard)
+      - 4412: Plywood and laminated wood
+      - 4413: Densified wood blocks and profiles
+      - 4414–4421: All finished wood articles (frames, cases, tools,
+          joinery, furniture parts, tableware, ornaments, etc.)
 
     ## Country / region handling
     The "country" field in the prompt may contain:
@@ -287,11 +308,11 @@ DEFAULT_PROMPT = dedent("""\
     ENT 3: How large a volume of the considered host plant commodity is
     traded into Norway annually?
 
-    Pathway: plants for planting
+    Pathway: plants for planting, Wood and wood products, WOOD AND ARTICLES OF WOOD
 
-    Host list: Pinus banksiana, Pinus caribaea var. bahamensis, Pinus caribaea var. hondurensis, Pinus contorta, Pinus echinata, Pinus elliottii, Pinus glabra, Pinus halepensis, Pinus mugo, Pinus nigra subsp. laricio, Pinus palustris, Pinus pinaster, Pinus pinea, Pinus resinosa, Pinus strobus, Pinus sylvestris, Pinus taeda, Pinus virginiana, Cryptomeria sp.
+    Host list: Pinus, Larix, Picea 
     
-    Country of origin:  Albania, Canada, France, Italy, Mexico, Puerto Rico, Turks & Caicos Islands, United States.
+    Country of origin: China, Russia, Japan, Mongolia, Taiwan
     
     Years: 5
 
