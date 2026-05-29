@@ -234,8 +234,8 @@ DEFAULT_PROMPT = dedent("""\
     IMP 1 + EST 2: What is the annual production value AND cultivated
     area of [CROP] in Norway?
 
-    Crop:  [CROP]        ← replace with the crop or host plant of interest
-    Years: [YEARS]       ← replace with number of years (e.g. 10)
+    Crop:  [Prunus, Larix, Pinus]        ← replace with the crop or host plant of interest
+    Years: [10]       ← replace with number of years (e.g. 10)
 
     Instructions:
       1. Search NIBIO groups to find the most relevant group for the

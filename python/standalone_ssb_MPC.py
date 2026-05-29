@@ -306,14 +306,13 @@ def run(prompt: str, verbose: bool = False) -> str:
 # ── PROMPT ────────────────────────────────────────────────────────────────
 
 DEFAULT_PROMPT = dedent("""\
-    ENT 3: How large a volume of the considered host plant commodity is
-    traded into Norway annually?
+    ENT 3: How large a volume of the considered host plant commodity is traded into Norway annually?
 
-    Pathway: plants for planting, Wood and wood products, WOOD AND ARTICLES OF WOOD
+    Pathway: Live trees, plants,
 
-    Host list: Pinus, Larix, Picea 
-    
-    Country of origin: China, Russia, Japan, Mongolia, Taiwan
+    Host list: "Abies", "Calocedrus", "Cedrus", "Cupressus", "Juniperus", "Larix", "Picea", "Pinus", "Pseudotsuga", "Taxus", "Torreya", "Tsuga"
+
+    Country of origin: Serbia
     
     Years: 5
 
