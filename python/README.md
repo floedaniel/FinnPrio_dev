@@ -24,7 +24,6 @@ Always run the justifications script **before** the values script.
 |--------|---------|
 | `populate_finnprio_justifications.py` | Generate justifications via GPT Researcher web research |
 | `populate_finnprio_values.py` | Determine min/likely/max values from justifications |
-| `populate_finnprio_values_local.py` | Same as above but using Ollama (free, local) |
 | `standalone_ssb_MPC.py` | CLI tool for ad-hoc SSB Statistics Norway trade queries |
 | `view_justifications.py` | Inspect generated justifications in the DB |
 | `servers/eppo_mcp_server.py` | MCP server for EPPO Global Database API (used by legacy unified script) |
