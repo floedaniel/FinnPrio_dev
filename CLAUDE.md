@@ -342,6 +342,8 @@ Diagnostic and troubleshooting utilities:
 
 ### Python AI Enhancement Scripts (`python/`)
 
+See `python/README.md` for the full script inventory, usage examples, and configuration options.
+
 Python scripts for automatically generating justifications and populating min/likely/max values using AI:
 
 **Main Scripts:**
@@ -386,7 +388,7 @@ See `python/README.md` for detailed documentation and `python/CHANGELOG.md` for 
 - `SSB_PATHWAYS` set in `populate_finnprio_justifications.py` gates SSB activation: keywords `"seeds"`, `"plants for planting"`, `"wood"`, `"food"`, `"fodder"`, `"living plant"` — Hitchhiking, Natural spread, Intentional introduction never trigger SSB
 - `toll_search_hs_codes()` downloads `customstariffstructure.xml` on first call and caches it in `python/`; subsequent calls use the in-memory index — no re-download during a pipeline run
 
-**`gpt_researcher` API gotchas** (relevant to `Populate_finprio_justifications_deep.py`):
+**`gpt_researcher` API gotchas** (relevant to `python/legacy/Populate_finprio_justifications_deep.py`):
 - `Tone` enum: `from gpt_researcher.utils.enum import Tone`
 - `report_source` takes a string literal: `"web"` / `"local"` / `"hybrid"`
 - `conduct_research(on_progress=cb)`: callback is called **synchronously** — must be `def`, not `async def`
