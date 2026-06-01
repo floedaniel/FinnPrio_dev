@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **32 unit tests** in `python/tests/test_dag_values.py` covering all public functions.
 - **Model upgraded**: `populate_finnprio_values.py` now uses `gpt-4o` (was `gpt-4o-mini`) for both boolean and min/likely/max scoring.
 
+### Added - May 2026
+
+#### EPPO Global Database GPT Researcher retriever (`python/eppo_gd_retriever.py`)
+
+New custom retriever that supplies the AI-research pipeline with content from `gd.eppo.int` for the species identified by `os.environ["EPPO_CODE"]`:
+- `EPPOGDSearch.search()` returns up to 20 newest EPPO Reporting Service articles with full body text, followed by all EPPO PRA Platform document links as synthetic title+URL bodies
+- In-process cache keyed by EPPO code — first call ~12 s, subsequent calls ~0 ms
+- HTTP/parse errors soft-fail to `[]` — never propagates
+- `register()` monkey-patches `gpt_researcher.actions.retriever.get_retriever` to recognise `"eppo_gd"` without editing the pip package
+- `populate_finnprio_justifications.py`: `eppo_gd` appended to default `RETRIEVER` env; `EPPO_CODE` set per assessment and cleared on exit
+
 ### Changed - May 2026
 
 #### Python codebase housekeeping — 2026-05-29

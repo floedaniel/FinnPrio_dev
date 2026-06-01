@@ -42,6 +42,19 @@ All notable changes to the Python AI enhancement scripts.
 
 ---
 
+## [2026-05-29b] - EPPO Global Database retriever + model upgrade
+
+### Added
+
+- **`eppo_gd_retriever.py`** — Custom GPT Researcher retriever (`EPPOGDSearch`) scraping `gd.eppo.int` for the species set in `os.environ["EPPO_CODE"]`. Returns up to 20 newest EPPO Reporting Service articles (full body text) plus all EPPO PRA Platform document links as synthetic title+URL bodies. In-process cache per EPPO code (~12 s first call, ~0 ms subsequent). All HTTP/parse errors soft-fail to `[]`. `register()` monkey-patches `gpt_researcher.actions.retriever.get_retriever` — no edits to the pip package needed.
+- **`populate_finnprio_justifications.py`** integration: `eppo_gd` added to default `RETRIEVER` env; `EPPO_CODE` set per assessment and cleared on exit via `try/finally`.
+
+### Changed
+
+- **`STRATEGIC_LLM`** upgraded from `openai:o4-mini` to `openai:o3` in `populate_finnprio_justifications.py`.
+
+---
+
 ## [2026-05-29] - Codebase housekeeping: legacy quarantine, DAG audit, SSB Ch 44 fix
 
 ### Changed

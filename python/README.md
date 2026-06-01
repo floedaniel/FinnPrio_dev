@@ -26,9 +26,10 @@ Always run the justifications script **before** the values script.
 | `populate_finnprio_values.py` | Determine min/likely/max values from justifications (with DAG enforcement) |
 | `dag_values.py` | DAG enforcement module — zero-forcing, sibling clamp, topological sort, JSONL audit |
 | `dag_config.py` | Question dependency graph and sibling constraints (shared by both scripts) |
+| `eppo_gd_retriever.py` | GPT Researcher retriever — scrapes EPPO Global Database (Reporting + PRA) per species |
 | `standalone_ssb_MPC.py` | CLI tool for ad-hoc SSB Statistics Norway trade queries |
 | `view_justifications.py` | Inspect generated justifications in the DB |
-| `servers/eppo_mcp_server.py` | MCP server for EPPO Global Database API (used by legacy unified script) |
+| `servers/eppo_mcp_server.py` | MCP server for EPPO Global Database API |
 
 Legacy variants (no longer the canonical scripts) are in `python/legacy/`.
 
