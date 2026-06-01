@@ -556,6 +556,10 @@ class ValuePopulator:
             jsonl_path = str(
                 Path(self.db_path).parent / f"dag_corrections_{Path(self.db_path).stem}.jsonl"
             )
+            # Enrich answers with question codes required by topological_sort_answers
+            for _a in answers:
+                _qd = self.get_question_options(_a['idQuestion'], "questions")
+                _a['code'] = _qd['code'] if _qd else f"UNKNOWN_{_a['idQuestion']}"
             answers = topological_sort_answers(answers, is_pathway=False)
 
             # Process regular answers
