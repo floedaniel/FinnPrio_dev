@@ -267,7 +267,8 @@ class ValuePopulator:
         options: List[Dict],
         justification: str,
         question_type: str = "minmax",
-        question_code: str = None
+        question_code: str = None,
+        prior_context: str = "",
     ) -> Dict[str, str]:
         """
         Use GPT-4o to determine appropriate min/likely/max values based on justification.
@@ -291,6 +292,8 @@ class ValuePopulator:
             return await self._call_gpt_boolean(justification, question_code, yes_code)
 
         prompt = build_value_selection_prompt(question_code, pest_name, justification, options)
+        if prior_context:
+            prompt = prior_context + "\n\n" + prompt
         return await self._call_gpt_for_values(prompt, options)
 
     async def _call_gpt_boolean(self, justification: str, question_code: str, yes_code: str) -> Optional[Dict[str, str]]:
@@ -547,52 +550,131 @@ class ValuePopulator:
                 print("✅ No answers to populate!")
                 return
 
+            # ── Hook 1: state initialisation ─────────────────────────────────────
+            scored_context: Dict[str, Dict[str, str]] = self.load_scored_context(assessment_id)
+            options_map: Dict[str, List[Dict]] = {}
+            jsonl_path = str(
+                Path(self.db_path).parent / f"dag_corrections_{Path(self.db_path).stem}.jsonl"
+            )
+            answers = topological_sort_answers(answers, is_pathway=False)
+
             # Process regular answers
             print("=" * 80)
             print("Processing Regular Answers")
             print("=" * 80 + "\n")
 
+            # ── Hook 2: revised loop ──────────────────────────────────────────────
             for i, answer in enumerate(answers, 1):
                 id_answer = answer['idAnswer']
                 id_assessment = answer['idAssessment']
                 id_question = answer['idQuestion']
                 justification = answer['justification']
 
-                # Get pest name
                 pest_name = self.get_pest_name(id_assessment)
-
-                # Get question details
                 question_data = self.get_question_options(id_question, "questions")
                 if not question_data:
                     print(f"[{i}/{len(answers)}] ⚠️  Question {id_question} not found, skipping")
                     continue
 
+                question_code = question_data['code']
+                question_type = question_data['type']
+                options = question_data['options']
+                options_map[question_code] = options
+
                 print(f"[{i}/{len(answers)}] Processing answer {id_answer}")
                 print(f"  Pest: {pest_name}")
-                print(f"  Question ({question_data['code']}): {question_data['question'][:70]}...")
-                print(f"  Type: {question_data['type']}")
+                print(f"  Question ({question_code}): {question_data['question'][:70]}...")
+                print(f"  Type: {question_type}")
 
-                # Determine values with GPT
-                values = await self.determine_values_with_gpt(
-                    pest_name=pest_name,
-                    question_text=question_data['question'],
-                    options=question_data['options'],
-                    justification=justification,
-                    question_type=question_data['type'],
-                    question_code=question_data['code']
+                # Tier 1: zero-force check
+                forcing = check_zero_forcing(
+                    question_code, scored_context, options, question_type, is_pathway=False
                 )
+                forced_params = {f["parameter"] for f in forcing["flags"]} if forcing else set()
+                all_forced = forced_params == {"min", "likely", "max"}
 
-                if values:
-                    # Check if all values are None (boolean NO answer)
-                    if all(v is None for v in [values['min'], values['likely'], values['max']]):
-                        print(f"  Selected: NO (all values null)")
-                        print(f"  ⚠️  Skipped (boolean question answered NO)")
-                    else:
-                        print(f"  Selected: min={values['min']}, likely={values['likely']}, max={values['max']}")
-                        self.update_answer_values(id_answer, values['min'], values['likely'], values['max'])
-                        print(f"  ✅ Updated")
+                final_values: Optional[Dict] = None
+                gpt_values: Optional[Dict] = None
+
+                if forcing is not None and all_forced:
+                    final_values = {
+                        "min": forcing["min"],
+                        "likely": forcing["likely"],
+                        "max": forcing["max"],
+                    }
+                    print(f"  ⚡ All parameters zero-forced (GPT skipped): {forced_params}")
                 else:
-                    print(f"  ⚠️  Skipped (error determining values)")
+                    prior_ctx = build_scored_prior_context(question_code, scored_context, options_map)
+                    gpt_values = await self.determine_values_with_gpt(
+                        pest_name=pest_name,
+                        question_text=question_data['question'],
+                        options=options,
+                        justification=justification,
+                        question_type=question_type,
+                        question_code=question_code,
+                        prior_context=prior_ctx,
+                    )
+                    if gpt_values is None:
+                        print(f"  ⚠️  Skipped (error determining values)")
+                        print()
+                        continue
+
+                    if forcing is not None:
+                        final_values = dict(gpt_values)
+                        for flag in forcing["flags"]:
+                            param = flag["parameter"]
+                            flag["original_option"] = gpt_values.get(param)
+                            final_values[param] = forcing[param]
+                        print(f"  ⚡ Partial zero-forcing applied to: {forced_params}")
+                    else:
+                        final_values = gpt_values
+
+                # Post-GPT sibling clamp
+                clamp = check_sibling_clamp(question_code, final_values, scored_context, options_map)
+                if clamp is not None:
+                    final_values = {
+                        "min": clamp["min"],
+                        "likely": clamp["likely"],
+                        "max": clamp["max"],
+                    }
+                    print(f"  🔧 Sibling clamp applied")
+
+                # Write values and update state
+                if final_values:
+                    if all(v is None for v in final_values.values()):
+                        print(f"  Selected: NO (all values null)")
+                        print(f"  ⚠️  Skipped (boolean answered NO or fully zero-forced to None)")
+                    else:
+                        print(
+                            f"  Selected: min={final_values['min']}, "
+                            f"likely={final_values['likely']}, max={final_values['max']}"
+                        )
+                        self.update_answer_values(
+                            id_answer, final_values["min"], final_values["likely"], final_values["max"]
+                        )
+                        print(f"  ✅ Updated")
+
+                    from datetime import datetime
+                    timestamp = datetime.now().isoformat(timespec="seconds")
+                    all_flags = list(forcing["flags"] if forcing else [])
+                    if clamp:
+                        all_flags.extend(clamp["flags"])
+                    for flag in all_flags:
+                        append_dag_correction(jsonl_path, {
+                            "assessment_id": id_assessment,
+                            "question_code": question_code,
+                            "parameter": flag["parameter"],
+                            "rule_fired": flag["rule_fired"],
+                            "original_option": flag.get("original_option"),
+                            "forced_option": flag.get("forced_option"),
+                            "timestamp": timestamp,
+                        })
+
+                    scored_context[question_code] = {
+                        "min": final_values["min"],
+                        "likely": final_values["likely"],
+                        "max": final_values["max"],
+                    }
 
                 print()
 
