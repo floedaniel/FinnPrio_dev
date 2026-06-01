@@ -125,3 +125,57 @@ def topological_sort_answers(
     result.extend(code_to_q[c] for c in codes if c not in processed)
 
     return result
+
+
+def check_zero_forcing(
+    question_code: str,
+    scored_context: Dict[str, Dict[str, str]],
+    options: List[Dict],
+    question_type: str = "minmax",
+    is_pathway: bool = False,
+) -> Optional[Dict]:
+    """Tier 1 zero-force check.
+
+    Returns a result dict when at least one parameter must be forced to the
+    zero option, or None if no rule fires.
+
+    result = {
+        "min":    opt_or_None,   # forced value; None = this param not forced
+        "likely": opt_or_None,
+        "max":    opt_or_None,
+        "flags": [{
+            "parameter":       str,
+            "rule_fired":      str,
+            "original_option": None,   # filled by caller after GPT if GPT ran
+            "forced_option":   str | None,
+        }]
+    }
+
+    forced_option is None for boolean questions (the NO convention).
+    """
+    rules = PATHWAY_ZERO_FORCING_RULES if is_pathway else ZERO_FORCING_RULES
+    code = _normalize(question_code)
+    zero_opt = get_zero_option(options, question_type)
+
+    result: Dict = {"min": None, "likely": None, "max": None, "flags": []}
+    any_forced = False
+
+    for upstream_code, rule in rules.items():
+        if code not in rule["targets"]:
+            continue
+        upstream = scored_context.get(upstream_code)
+        if not upstream:
+            continue
+        for param in ("min", "likely", "max"):
+            if upstream.get(param) == rule["zero_option"]:
+                result[param] = zero_opt
+                any_forced = True
+                result["flags"].append({
+                    "parameter": param,
+                    "rule_fired": f"{upstream_code}={rule['zero_option']}→{code}=zero",
+                    "original_option": None,
+                    "forced_option": zero_opt,
+                    "reason": rule["reason"],
+                })
+
+    return result if any_forced else None

@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from dag_values import (
     get_zero_option,
     topological_sort_answers,
+    check_zero_forcing,
 )
 
 # ─── Shared fixtures ──────────────────────────────────────────────────────────
@@ -111,3 +112,76 @@ def test_topological_sort_no_deps_stable():
     answers = [{"code": "EST4"}, {"code": "MAN3"}]
     result = topological_sort_answers(answers, is_pathway=False)
     assert len(result) == 2
+
+
+# ─── check_zero_forcing ───────────────────────────────────────────────────────
+
+def test_check_zero_forcing_all_forced_minmax():
+    scored_context = {"EST1": {"min": "a", "likely": "a", "max": "a"}}
+    result = check_zero_forcing("IMP1", scored_context, IMP1_OPTIONS, "minmax")
+    assert result is not None
+    assert result["min"] == "a"
+    assert result["likely"] == "a"
+    assert result["max"] == "a"
+    forced_params = {f["parameter"] for f in result["flags"]}
+    assert forced_params == {"min", "likely", "max"}
+
+def test_check_zero_forcing_partial_min_only():
+    scored_context = {"EST1": {"min": "a", "likely": "b", "max": "c"}}
+    result = check_zero_forcing("IMP1", scored_context, IMP1_OPTIONS, "minmax")
+    assert result is not None
+    assert result["min"] == "a"
+    assert result["likely"] is None   # not forced
+    assert result["max"] is None      # not forced
+    assert len(result["flags"]) == 1
+    assert result["flags"][0]["parameter"] == "min"
+
+def test_check_zero_forcing_no_trigger():
+    scored_context = {"EST1": {"min": "b", "likely": "c", "max": "d"}}
+    result = check_zero_forcing("IMP1", scored_context, IMP1_OPTIONS, "minmax")
+    assert result is None
+
+def test_check_zero_forcing_wrong_target():
+    # EST1 does not force EST3
+    scored_context = {"EST1": {"min": "a", "likely": "a", "max": "a"}}
+    result = check_zero_forcing("EST3", scored_context, EST1_OPTIONS, "minmax")
+    assert result is None
+
+def test_check_zero_forcing_est2_triggers():
+    scored_context = {"EST2": {"min": "a", "likely": "a", "max": "b"}}
+    result = check_zero_forcing("IMP3", scored_context, IMP1_OPTIONS, "minmax")
+    assert result is not None
+    assert result["min"] == "a"
+    assert result["likely"] == "a"
+    assert result["max"] is None      # EST2_max is "b", not "a"
+
+def test_check_zero_forcing_boolean_forced():
+    # Boolean zero_opt is None — "NO" answer
+    scored_context = {"EST1": {"min": "a", "likely": "a", "max": "a"}}
+    result = check_zero_forcing("IMP2.1", scored_context, BOOLEAN_OPTIONS, "boolean")
+    assert result is not None
+    forced_params = {f["parameter"] for f in result["flags"]}
+    assert forced_params == {"min", "likely", "max"}
+    # forced_option is None for boolean (the NO convention)
+    assert all(f["forced_option"] is None for f in result["flags"])
+
+def test_check_zero_forcing_pathway_ent2a_a_forces_ent3():
+    scored_context = {"ENT2A": {"min": "a", "likely": "a", "max": "b"}}
+    result = check_zero_forcing(
+        "ENT3", scored_context, IMP1_OPTIONS, "minmax", is_pathway=True
+    )
+    assert result is not None
+    assert result["min"] == "a"
+    assert result["likely"] == "a"
+    assert result["max"] is None
+
+def test_check_zero_forcing_original_option_starts_none():
+    # original_option is None until caller fills it after GPT runs
+    scored_context = {"EST1": {"min": "a", "likely": "a", "max": "a"}}
+    result = check_zero_forcing("IMP1", scored_context, IMP1_OPTIONS, "minmax")
+    assert all(f["original_option"] is None for f in result["flags"])
+
+def test_check_zero_forcing_no_upstream_in_context():
+    # EST1 not yet scored — no forcing
+    result = check_zero_forcing("IMP1", {}, IMP1_OPTIONS, "minmax")
+    assert result is None
