@@ -39,11 +39,11 @@ from dag_values import (
 
 # Skip Existing Values
 # Set to False to overwrite existing values, True to skip answers that already have values
-SKIP_EXISTING_VALUES = True
+SKIP_EXISTING_VALUES = False
 
 # API Keys - Read from files
 OPENAI_API_KEY_FILE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\API keys\tore_vkm_openai.txt"
-TAVILY_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\Tavily_key.txt"
+TAVILY_API_KEY_FILE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\API keys\Tavily_key.txt"
 
 # Load API keys from files
 def load_api_key(file_path: str) -> str:
@@ -326,7 +326,7 @@ class ValuePopulator:
 
         try:
             response = await client.chat.completions.create(
-                model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+                model=os.getenv("LLM_MODEL", "gpt-4o"),
                 messages=[
                     {"role": "system", "content": "You are an expert in plant pest risk assessment."},
                     {"role": "user", "content": prompt}
@@ -352,7 +352,7 @@ class ValuePopulator:
 
         try:
             response = await client.chat.completions.create(
-                model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+                model=os.getenv("LLM_MODEL", "gpt-4o"),
                 messages=[
                     {"role": "system", "content": "You are an expert in plant pest risk assessment. You analyze scientific evidence and determine appropriate risk estimates."},
                     {"role": "user", "content": prompt}
