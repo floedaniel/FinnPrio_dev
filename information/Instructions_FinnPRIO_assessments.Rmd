@@ -296,19 +296,19 @@ Score the following characteristics (1 point each, or 2 points if significant):
 
 ### Options
 
-**a.** It would not cause losses in the PRA area
-**b.** < 0.05 million EUR per year
-**c.** 0.05-0.1 million EUR per year
-**d.** 0.1-0.2 million EUR per year
-**e.** 0.2-0.4 million EUR per year
-**f.** 0.4-0.8 million EUR per year
-**g.** 0.8-1.5 million EUR per year
-**h.** 1.5-3 million EUR per year
-**i.** 3-6 million EUR per year
-**j.** 6-12 million EUR per year
-**k.** 12-25 million EUR per year
-**l.** 25-50 million EUR per year
-**m.** > 50 million EUR per year
+**a. It would not cause losses in the PRA area**
+**b. < 0.05 million EUR per year**
+**c. 0.05-0.1 million EUR per year**
+**d. 0.1-0.2 million EUR per year**
+**e. 0.2-0.4 million EUR per year**
+**f. 0.4-0.8 million EUR per year**
+**g. 0.8-1.5 million EUR per year**
+**h. 1.5-3 million EUR per year**
+**i. 3-6 million EUR per year**
+**j. 6-12 million EUR per year**
+**k. 12-25 million EUR per year**
+**l. 25-50 million EUR per year**
+**m. > 50 million EUR per year**
 
 ### Guidance
 
