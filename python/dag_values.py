@@ -23,6 +23,8 @@ ZERO_FORCING_RULES: Dict[str, Dict] = {
     "EST1": {
         "zero_option": "a",
         "targets": [
+            # IMP2.2 (vector status) excluded: it is a biological fact about the pest,
+            # independent of establishment conditions in Norway (dag_config.py: "IMP2.2": []).
             "IMP1", "IMP2.1", "IMP2.3", "IMP3",
             "IMP4.1", "IMP4.2", "IMP4.3",
         ],
@@ -34,6 +36,8 @@ ZERO_FORCING_RULES: Dict[str, Dict] = {
     "EST2": {
         "zero_option": "a",
         "targets": [
+            # IMP2.2 (vector status) excluded: it is a biological fact about the pest,
+            # independent of establishment conditions in Norway (dag_config.py: "IMP2.2": []).
             "IMP1", "IMP2.1", "IMP2.3", "IMP3",
             "IMP4.1", "IMP4.2", "IMP4.3",
         ],

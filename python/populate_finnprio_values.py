@@ -688,6 +688,7 @@ class ValuePopulator:
                 ep_id = pa['idEntryPathway']
                 pathway_groups.setdefault(ep_id, []).append(pa)
 
+            total_pathway_answers = len(pathway_answers)
             global_pathway_counter = 0
             for id_entry_pathway, group in pathway_groups.items():
                 # Enrich each answer with its question code so topological_sort_answers works.
@@ -718,14 +719,14 @@ class ValuePopulator:
 
                     question_data = self.get_question_options(id_path_question, "pathwayQuestions")
                     if not question_data:
-                        print(f"[{i}/{len(sorted_group)}] ⚠️  Pathway question {id_path_question} not found, skipping")
+                        print(f"[{i}/{total_pathway_answers}] ⚠️  Pathway question {id_path_question} not found, skipping")
                         continue
 
                     options = question_data['options']
                     question_type = question_data['type']
                     pathway_options_map[question_code] = options
 
-                    print(f"[{i}/{len(sorted_group)}] Processing pathway answer {id_path_answer}")
+                    print(f"[{i}/{total_pathway_answers}] Processing pathway answer {id_path_answer}")
                     print(f"  Pest: {pest_name}")
                     print(f"  Question ({question_code}): {question_data['question'][:70]}...")
 
