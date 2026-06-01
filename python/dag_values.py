@@ -61,3 +61,27 @@ PATHWAY_VALUES_DEPENDENCIES["ENT3"] = ["ENT2A"]
 # can read scored_context_pathway["ENT2A"]. Table 2 non-zero rows are
 # applied at simulation time in simulations.R — ENT2A is NOT injected
 # into the ENT3 GPT prompt. Do not add ENT2A to ENT3's context block.
+
+
+# ─── Functions ───────────────────────────────────────────────────────────────
+
+def _normalize(code: str) -> str:
+    """Canonical question code: uppercase, no trailing dot."""
+    return code.upper().rstrip('.')
+
+
+def get_zero_option(options: List[Dict], question_type: str = "minmax") -> Optional[str]:
+    """Return the opt code whose points == 0, or None for boolean questions.
+
+    Uses float() cast to guard against DB-returned strings and non-integer
+    values (EST1: 0/1.5/4.5/9; ENT2: 0/0.5/1/2/3).
+    Raises ValueError if no zero-points option exists (degenerate — not in schema).
+    """
+    if question_type == "boolean":
+        return None
+    zero_opts = [o for o in options if float(o["points"]) == 0.0]
+    if not zero_opts:
+        raise ValueError(
+            f"No zero-points option found. Options: {[o['opt'] for o in options]}"
+        )
+    return zero_opts[0]["opt"]
