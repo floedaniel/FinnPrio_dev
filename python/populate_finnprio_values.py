@@ -681,48 +681,141 @@ class ValuePopulator:
             print("Processing Pathway Answers")
             print("=" * 80 + "\n")
 
-            for i, answer in enumerate(pathway_answers, 1):
-                id_path_answer = answer['idPathAnswer']
-                id_assessment = answer['idAssessment']
-                id_path_question = answer['idPathQuestion']
-                justification = answer['justification']
+            # Group pathway_answers by id_entry_pathway (Option A)
+            # so scored_context_pathway is fresh per pathway instance.
+            pathway_groups: Dict[int, List[Dict]] = {}
+            for pa in pathway_answers:
+                ep_id = pa['idEntryPathway']
+                pathway_groups.setdefault(ep_id, []).append(pa)
 
-                # Get pest name
-                pest_name = self.get_pest_name(id_assessment)
+            global_pathway_counter = 0
+            for id_entry_pathway, group in pathway_groups.items():
+                # Enrich each answer with its question code so topological_sort_answers works.
+                enriched_group = []
+                for pa in group:
+                    qd = self.get_question_options(pa['idPathQuestion'], "pathwayQuestions")
+                    if qd:
+                        enriched_group.append({**pa, "code": qd['code']})
 
-                # Get question details
-                question_data = self.get_question_options(id_path_question, "pathwayQuestions")
-                if not question_data:
-                    print(f"[{i}/{len(pathway_answers)}] ⚠️  Pathway question {id_path_question} not found, skipping")
-                    continue
+                # Topological sort per pathway group.
+                sorted_group = topological_sort_answers(enriched_group, is_pathway=True)
 
-                print(f"[{i}/{len(pathway_answers)}] Processing pathway answer {id_path_answer}")
-                print(f"  Pest: {pest_name}")
-                print(f"  Question ({question_data['code']}): {question_data['question'][:70]}...")
+                # Per-pathway DAG state — fresh for each id_entry_pathway.
+                scored_context_pathway: Dict[str, Dict[str, str]] = self.load_scored_context_pathway(id_entry_pathway)
+                pathway_options_map: Dict[str, List[Dict]] = {}
 
-                # Determine values with GPT
-                values = await self.determine_values_with_gpt(
-                    pest_name=pest_name,
-                    question_text=question_data['question'],
-                    options=question_data['options'],
-                    justification=justification,
-                    question_type=question_data['type'],
-                    question_code=question_data['code']
-                )
+                for answer in sorted_group:
+                    global_pathway_counter += 1
+                    i = global_pathway_counter
 
-                if values:
-                    # Check if all values are None (boolean NO answer)
-                    if all(v is None for v in [values['min'], values['likely'], values['max']]):
-                        print(f"  Selected: NO (all values null)")
-                        print(f"  ⚠️  Skipped (boolean question answered NO)")
+                    id_path_answer = answer['idPathAnswer']
+                    id_assessment = answer['idAssessment']
+                    id_path_question = answer['idPathQuestion']
+                    justification = answer['justification']
+                    question_code = answer['code']
+
+                    question_data = self.get_question_options(id_path_question, "pathwayQuestions")
+                    if not question_data:
+                        print(f"[{i}/{len(pathway_answers)}] ⚠️  Pathway question {id_path_question} not found, skipping")
+                        continue
+
+                    options = question_data['options']
+                    question_type = question_data['type']
+                    pathway_options_map[question_code] = options
+
+                    print(f"[{i}/{len(pathway_answers)}] Processing pathway answer {id_path_answer}")
+                    print(f"  Pest: {pest_name}")
+                    print(f"  Question ({question_code}): {question_data['question'][:70]}...")
+
+                    # Tier 1: zero-force check (pathway-scoped)
+                    forcing = check_zero_forcing(
+                        question_code, scored_context_pathway, options, question_type, is_pathway=True
+                    )
+                    forced_params = {f["parameter"] for f in forcing["flags"]} if forcing else set()
+                    all_forced = forced_params == {"min", "likely", "max"}
+
+                    final_values: Optional[Dict] = None
+                    gpt_values: Optional[Dict] = None
+
+                    if all_forced:
+                        final_values = {
+                            "min": forcing["min"],
+                            "likely": forcing["likely"],
+                            "max": forcing["max"],
+                        }
+                        print(f"  ⚡ All parameters zero-forced (GPT skipped): {forced_params}")
                     else:
-                        print(f"  Selected: min={values['min']}, likely={values['likely']}, max={values['max']}")
-                        self.update_pathway_answer_values(id_path_answer, values['min'], values['likely'], values['max'])
-                        print(f"  ✅ Updated")
-                else:
-                    print(f"  ⚠️  Skipped (error determining values)")
+                        prior_ctx = build_scored_prior_context(question_code, scored_context_pathway, pathway_options_map)
+                        gpt_values = await self.determine_values_with_gpt(
+                            pest_name=pest_name,
+                            question_text=question_data['question'],
+                            options=options,
+                            justification=justification,
+                            question_type=question_type,
+                            question_code=question_code,
+                            prior_context=prior_ctx,
+                        )
+                        if gpt_values is None:
+                            print(f"  ⚠️  Skipped (error determining values)")
+                            print()
+                            continue
 
-                print()
+                        if forcing is not None:
+                            final_values = dict(gpt_values)
+                            for flag in forcing["flags"]:
+                                param = flag["parameter"]
+                                flag["original_option"] = gpt_values.get(param)
+                                final_values[param] = forcing[param]
+                            print(f"  ⚡ Partial zero-forcing applied to: {forced_params}")
+                        else:
+                            final_values = gpt_values
+
+                    # Post-GPT sibling clamp
+                    clamp = check_sibling_clamp(question_code, final_values, scored_context_pathway, pathway_options_map)
+                    if clamp is not None:
+                        final_values = {
+                            "min": clamp["min"],
+                            "likely": clamp["likely"],
+                            "max": clamp["max"],
+                        }
+                        print(f"  🔧 Sibling clamp applied")
+
+                    # Write values and update per-pathway state
+                    if final_values:
+                        if all(v is None for v in final_values.values()):
+                            print(f"  Selected: NO (all values null)")
+                            print(f"  ⚠️  Skipped (boolean answered NO or fully zero-forced to None)")
+                        else:
+                            print(
+                                f"  Selected: min={final_values['min']}, "
+                                f"likely={final_values['likely']}, max={final_values['max']}"
+                            )
+                            self.update_pathway_answer_values(
+                                id_path_answer, final_values["min"], final_values["likely"], final_values["max"]
+                            )
+                            print(f"  ✅ Updated")
+                            scored_context_pathway[question_code] = {
+                                "min": final_values["min"],
+                                "likely": final_values["likely"],
+                                "max": final_values["max"],
+                            }
+
+                        timestamp = datetime.now().isoformat(timespec="seconds")
+                        all_flags = list(forcing["flags"] if forcing else [])
+                        if clamp:
+                            all_flags.extend(clamp["flags"])
+                        for flag in all_flags:
+                            append_dag_correction(jsonl_path, {
+                                "assessment_id": id_assessment,
+                                "question_code": question_code,
+                                "parameter": flag["parameter"],
+                                "rule_fired": flag["rule_fired"],
+                                "original_option": flag.get("original_option"),
+                                "forced_option": flag.get("forced_option"),
+                                "timestamp": timestamp,
+                            })
+
+                    print()
 
             return total  # Return number of answers processed
 
