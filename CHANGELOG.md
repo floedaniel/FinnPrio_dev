@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - June 2026
+
+#### DAG enforcement layer for `populate_finnprio_values.py` — 2026-06-01
+
+- **`python/dag_values.py`** (new): stateless enforcement module implementing four rules from Heikkila et al. (2016): EST1=a → IMP zero, EST2=a → IMP zero (both p. 1832), ENT2A=a → ENT3 zero (Table 2), ENT2B ≤ ENT2A clamp. Enforcement is parameter-wise (min/likely/max independently).
+- **Topological sort**: questions are now processed in dependency order (EST1 → EST2 → IMP, ENT2A → ENT2B/ENT3) so upstream scores are available when downstream zero-forcing checks run.
+- **`scored_context` seeding**: existing DB values are read before each loop, so partial re-runs with `SKIP_EXISTING_VALUES=True` still apply zero-forcing to previously unscored downstream questions.
+- **JSONL audit trail**: every correction (zero-force or clamp) is appended to `dag_corrections_<db_stem>.jsonl` alongside the database — one line per parameter per event, capturing `original_option` vs `forced_option`. Intended for manuscript analysis of AI model reliability.
+- **32 unit tests** in `python/tests/test_dag_values.py` covering all public functions.
+- **Model upgraded**: `populate_finnprio_values.py` now uses `gpt-4o` (was `gpt-4o-mini`) for both boolean and min/likely/max scoring.
+
 ### Changed - May 2026
 
 #### Python codebase housekeeping — 2026-05-29

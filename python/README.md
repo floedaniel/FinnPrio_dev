@@ -23,7 +23,9 @@ Always run the justifications script **before** the values script.
 | Script | Purpose |
 |--------|---------|
 | `populate_finnprio_justifications.py` | Generate justifications via GPT Researcher web research |
-| `populate_finnprio_values.py` | Determine min/likely/max values from justifications |
+| `populate_finnprio_values.py` | Determine min/likely/max values from justifications (with DAG enforcement) |
+| `dag_values.py` | DAG enforcement module — zero-forcing, sibling clamp, topological sort, JSONL audit |
+| `dag_config.py` | Question dependency graph and sibling constraints (shared by both scripts) |
 | `standalone_ssb_MPC.py` | CLI tool for ad-hoc SSB Statistics Norway trade queries |
 | `view_justifications.py` | Inspect generated justifications in the DB |
 | `servers/eppo_mcp_server.py` | MCP server for EPPO Global Database API (used by legacy unified script) |
@@ -73,6 +75,8 @@ Key settings are at the top of each script:
 
 **`populate_finnprio_values.py`**
 - `SKIP_EXISTING_VALUES` — skip questions that already have min/likely/max (default `True`)
+- Model: `gpt-4o` (overridable via `LLM_MODEL` env var)
+- DAG enforcement runs automatically — no configuration needed
 
 **API keys** are read from text files. Paths are set near the top of each script. Default locations:
 ```
@@ -103,6 +107,22 @@ python parse_rmd_instructions.py --force
 
 - **Justifications script** creates a timestamped database copy: `source_ai_enhanced_DD_MM_YYYY.db`
 - **Values script** updates the database in place (no new file)
+- **DAG audit log** written alongside the database: `dag_corrections_<db_stem>.jsonl` — one line per parameter per correction event (zero-forcing and sibling clamps). Used to measure AI model reliability.
+
+---
+
+## DAG Enforcement (values script)
+
+`populate_finnprio_values.py` enforces four logical constraints from Heikkila et al. (2016) before or after calling GPT:
+
+| Rule | Trigger | Action |
+|------|---------|--------|
+| EST1 = "a" → IMP zero | Climate unsuitable (p. 1832) | IMP1, IMP2.1, IMP2.3, IMP3, IMP4.1–4.3 forced to zero per parameter |
+| EST2 = "a" → IMP zero | No host plants (p. 1832) | Same targets as above |
+| ENT2A = "a" → ENT3 zero | Pathway impossible (Table 2) | ENT3 forced to zero within same pathway |
+| ENT2B ≤ ENT2A | Management reduces entry only | ENT2B clamped down post-GPT |
+
+Enforcement is **parameter-wise** (min/likely/max independently). All corrections are logged to `dag_corrections_<db_stem>.jsonl`.
 
 ---
 
@@ -114,3 +134,4 @@ python parse_rmd_instructions.py --force
 | "No such table: answers" | Wrong database path, or DB does not have the FinnPRIO schema |
 | Pathway answers missing | Check that pathways are selected in `entryPathways` before running |
 | No values populated | Justifications must exist first — run step 1 before step 2 |
+| DAG clamps unexpected | Inspect `dag_corrections_<db_stem>.jsonl` next to the database for per-parameter audit |

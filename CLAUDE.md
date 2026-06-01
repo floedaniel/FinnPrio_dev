@@ -354,7 +354,9 @@ Python scripts for automatically generating justifications and populating min/li
 - `populate_finnprio_justifications.py`: Main script using GPT Researcher for web research to generate scientific justifications
 - `populate_finnprio_justifications_mcp.py`: MCP server version with caching and persistent connection
 - `populate_finnprio_justifications_anthropic.py`: Claude (Anthropic) version with optimized prompts
-- `populate_finnprio_values.py`: Determines min/likely/max values from justifications
+- `populate_finnprio_values.py`: Determines min/likely/max values from justifications (with DAG enforcement via `dag_values.py`)
+- `dag_values.py`: DAG enforcement layer — zero-forcing (EST1/EST2→IMP, ENT2A→ENT3), ENT2B≤ENT2A clamp, topological sort, JSONL audit trail. Stateless; imported by `populate_finnprio_values.py`
+- `dag_config.py`: Question dependency graph and sibling constraints (shared by justifications and values scripts)
 - `view_justifications.py`: Utility to view generated justifications
 
 **Standalone SSB utility:**

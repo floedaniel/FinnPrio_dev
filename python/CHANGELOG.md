@@ -7,6 +7,41 @@ All notable changes to the Python AI enhancement scripts.
 
 ---
 
+## [2026-06-01] - DAG enforcement layer for populate_finnprio_values.py
+
+### Added
+
+- **`dag_values.py`** — stateless DAG enforcement module. Exposes:
+  `get_zero_option`, `topological_sort_answers`, `check_zero_forcing`,
+  `check_sibling_clamp`, `build_scored_prior_context`, `append_dag_correction`,
+  `PATHWAY_VALUES_DEPENDENCIES`.
+- **Four enforcement rules** (Heikkila et al. 2016):
+  - EST1 = "a" → IMP1/IMP2.1/IMP2.3/IMP3/IMP4.1–4.3 forced to zero per parameter (p. 1832)
+  - EST2 = "a" → same targets (p. 1832)
+  - ENT2A = "a" → ENT3 forced to zero within same pathway (Table 2, p. 1830)
+  - ENT2B ≤ ENT2A — post-GPT sibling clamp by points value
+- **Topological sort** applied before both the regular-questions and pathway loops
+  so upstream scores are always written before downstream checks read them.
+- **`scored_context` seeding**: `load_scored_context()` / `load_scored_context_pathway()`
+  read already-scored DB values before each loop — partial re-runs stay consistent.
+- **Parameter-wise enforcement**: each of min/likely/max is checked and forced
+  independently; partial forcing still calls GPT for unforced parameters.
+- **JSONL audit trail**: `dag_corrections_<db_stem>.jsonl` written alongside the
+  database — one line per parameter per event, fields:
+  `{assessment_id, question_code, parameter, rule_fired, original_option, forced_option, timestamp}`.
+- **`python/tests/test_dag_values.py`**: 32 unit tests covering all public functions.
+
+### Changed
+
+- **`populate_finnprio_values.py`**: regular-answers and pathway loops now use
+  topological ordering, zero-forcing, sibling clamping, and JSONL logging.
+  Pathway loop groups answers by `id_entry_pathway` with a fresh `scored_context_pathway`
+  per group.
+- **Model upgraded**: default scoring model changed from `gpt-4o-mini` to `gpt-4o`
+  (overridable via `LLM_MODEL` env var).
+
+---
+
 ## [2026-05-29] - Codebase housekeeping: legacy quarantine, DAG audit, SSB Ch 44 fix
 
 ### Changed
