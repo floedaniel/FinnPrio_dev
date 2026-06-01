@@ -654,7 +654,6 @@ class ValuePopulator:
                         )
                         print(f"  ✅ Updated")
 
-                    from datetime import datetime
                     timestamp = datetime.now().isoformat(timespec="seconds")
                     all_flags = list(forcing["flags"] if forcing else [])
                     if clamp:
