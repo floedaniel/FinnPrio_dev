@@ -25,6 +25,13 @@ from openai import AsyncOpenAI
 
 # Import instructions loader for value selection prompts
 from instructions_loader import build_value_selection_prompt, get_question_instructions
+from dag_values import (
+    topological_sort_answers,
+    check_zero_forcing,
+    check_sibling_clamp,
+    build_scored_prior_context,
+    append_dag_correction,
+)
 
 ################################################################################
 # CONFIGURATION - EDIT THESE SETTINGS
@@ -193,6 +200,65 @@ class ValuePopulator:
 
         row = cursor.fetchone()
         return row['scientificName'] if row else "Unknown pest"
+
+    def load_scored_context(self, assessment_id: int) -> Dict[str, Dict[str, str]]:
+        """Read all currently-scored min/likely/max values for regular questions.
+
+        Seeds scored_context so upstream values are available even when
+        skip_existing=True filters them out of the processing loop.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT
+                q."group" || q.number ||
+                CASE WHEN q.subgroup IS NOT NULL THEN '.' || q.subgroup ELSE '' END AS code,
+                a.min, a.likely, a.max
+            FROM answers a
+            JOIN questions q ON a.idQuestion = q.idQuestion
+            WHERE a.idAssessment = ?
+              AND a.min IS NOT NULL AND a.min != ''
+              AND a.likely IS NOT NULL AND a.likely != ''
+              AND a.max IS NOT NULL AND a.max != ''
+        """, (assessment_id,))
+        result: Dict[str, Dict[str, str]] = {}
+        for row in cursor.fetchall():
+            code = row["code"].upper()
+            result[code] = {
+                "min": row["min"],
+                "likely": row["likely"],
+                "max": row["max"],
+            }
+        return result
+
+    def load_scored_context_pathway(
+        self, id_entry_pathway: int
+    ) -> Dict[str, Dict[str, str]]:
+        """Read all currently-scored min/likely/max values for one pathway instance.
+
+        Seeds scored_context_pathway so upstream pathway values (e.g. ENT2A)
+        are available for zero-forcing even when skip_existing=True is set.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT
+                pq."group" || pq.number AS code,
+                pa.min, pa.likely, pa.max
+            FROM pathwayAnswers pa
+            JOIN pathwayQuestions pq ON pa.idPathQuestion = pq.idPathQuestion
+            WHERE pa.idEntryPathway = ?
+              AND pa.min IS NOT NULL AND pa.min != ''
+              AND pa.likely IS NOT NULL AND pa.likely != ''
+              AND pa.max IS NOT NULL AND pa.max != ''
+        """, (id_entry_pathway,))
+        result: Dict[str, Dict[str, str]] = {}
+        for row in cursor.fetchall():
+            code = row["code"].upper()
+            result[code] = {
+                "min": row["min"],
+                "likely": row["likely"],
+                "max": row["max"],
+            }
+        return result
 
     async def determine_values_with_gpt(
         self,
