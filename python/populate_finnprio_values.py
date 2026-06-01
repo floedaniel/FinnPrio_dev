@@ -294,7 +294,6 @@ class ValuePopulator:
         prompt = build_value_selection_prompt(question_code, pest_name, justification, options)
         if prior_context:
             prompt = prior_context + "\n\n" + prompt
-        print(f"\n{'='*80}\nFULL PROMPT SENT TO LLM:\n{'='*80}\n{prompt}\n{'='*80}\n")
         return await self._call_gpt_for_values(prompt, options)
 
     async def _call_gpt_boolean(self, justification: str, question_code: str, yes_code: str) -> Optional[Dict[str, str]]:
@@ -363,7 +362,6 @@ class ValuePopulator:
             )
 
             content = response.choices[0].message.content.strip()
-            print(f"\n{'='*80}\nLLM RESPONSE:\n{'='*80}\n{content}\n{'='*80}\n")
 
             # Extract JSON from response (in case model adds extra text)
             if "```json" in content:
