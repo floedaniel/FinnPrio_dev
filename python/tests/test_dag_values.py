@@ -12,6 +12,8 @@ from dag_values import (
     topological_sort_answers,
     check_zero_forcing,
     check_sibling_clamp,
+    build_scored_prior_context,
+    append_dag_correction,
 )
 
 # ─── Shared fixtures ──────────────────────────────────────────────────────────
@@ -251,3 +253,79 @@ def test_check_sibling_clamp_missing_sibling_in_context():
     options_map = {"ENT2A": ENT2_OPTIONS, "ENT2B": ENT2B_OPTIONS}
     result = check_sibling_clamp("ENT2B", values, {}, options_map)
     assert result is None
+
+
+# ─── build_scored_prior_context ───────────────────────────────────────────────
+
+def test_build_scored_prior_context_includes_deps():
+    scored_context = {
+        "EST1": {"min": "a", "likely": "b", "max": "c"},
+        "EST2": {"min": "c", "likely": "d", "max": "d"},
+    }
+    options_map = {
+        "EST1": EST1_OPTIONS,
+        "EST2": [
+            {"opt": "a", "text": "Not at all", "points": 0},
+            {"opt": "b", "text": "Very small", "points": 1},
+            {"opt": "c", "text": "Small", "points": 2},
+            {"opt": "d", "text": "Medium", "points": 3},
+            {"opt": "e", "text": "Large", "points": 5},
+        ],
+    }
+    result = build_scored_prior_context("IMP1", scored_context, options_map)
+    assert "EST1" in result
+    assert "EST2" in result
+    assert '"a"' in result
+    assert "No it could not" in result
+
+def test_build_scored_prior_context_no_deps_returns_empty():
+    result = build_scored_prior_context("EST4", {}, {})
+    assert result == ""
+
+def test_build_scored_prior_context_missing_upstream_skipped():
+    # EST2 in deps but not scored yet — should not crash
+    scored_context = {"EST1": {"min": "b", "likely": "b", "max": "c"}}
+    options_map = {"EST1": EST1_OPTIONS}
+    result = build_scored_prior_context("IMP1", scored_context, options_map)
+    assert "EST1" in result
+    assert "EST2" not in result
+
+# ─── append_dag_correction ────────────────────────────────────────────────────
+
+def test_append_dag_correction_creates_and_writes():
+    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
+        path = f.name
+    os.unlink(path)
+
+    entry = {
+        "assessment_id": 5,
+        "question_code": "IMP1",
+        "parameter": "min",
+        "rule_fired": "EST1=a→IMP1=zero",
+        "original_option": None,
+        "forced_option": "a",
+        "timestamp": "2026-06-01T10:00:00",
+    }
+    append_dag_correction(path, entry)
+
+    with open(path, encoding="utf-8") as f:
+        parsed = json.loads(f.readline())
+    assert parsed["assessment_id"] == 5
+    assert parsed["question_code"] == "IMP1"
+    os.unlink(path)
+
+def test_append_dag_correction_appends_not_overwrites():
+    with tempfile.NamedTemporaryFile(
+        suffix=".jsonl", delete=False, mode="w", encoding="utf-8"
+    ) as f:
+        f.write('{"existing": true}\n')
+        path = f.name
+
+    append_dag_correction(path, {"assessment_id": 99})
+
+    with open(path, encoding="utf-8") as f:
+        lines = f.readlines()
+    assert len(lines) == 2
+    assert json.loads(lines[0])["existing"] is True
+    assert json.loads(lines[1])["assessment_id"] == 99
+    os.unlink(path)

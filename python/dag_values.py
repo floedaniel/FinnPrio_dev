@@ -237,3 +237,51 @@ def check_sibling_clamp(
             })
 
     return result if any_clamped else None
+
+
+def build_scored_prior_context(
+    question_code: str,
+    scored_context: Dict[str, Dict[str, str]],
+    options_map: Dict[str, List[Dict]],
+) -> str:
+    """Build a scored-value context string for Tier 2 GPT prompt injection.
+
+    Shows upstream scored option codes and their text descriptions.
+    Returns empty string if no dependencies have been scored yet.
+    """
+    code = _normalize(question_code)
+    is_pathway = code in PATHWAY_VALUES_DEPENDENCIES and code not in QUESTION_DEPENDENCIES
+    deps = (
+        PATHWAY_VALUES_DEPENDENCIES.get(code, [])
+        if is_pathway
+        else QUESTION_DEPENDENCIES.get(code, [])
+    )
+    if not deps:
+        return ""
+
+    lines = ["PRIOR SCORED VALUES (upstream dependencies):"]
+    for dep in deps:
+        dep_scored = scored_context.get(dep)
+        dep_opts = options_map.get(dep, [])
+        if not dep_scored or not dep_opts:
+            continue
+        opt_text = {o["opt"]: o["text"] for o in dep_opts}
+        parts = []
+        for param in ("min", "likely", "max"):
+            val = dep_scored.get(param)
+            if val is not None:
+                parts.append(f'{param}="{val}" ({opt_text.get(val, val)})')
+        if parts:
+            lines.append(f"  {dep}: {', '.join(parts)}")
+
+    if len(lines) == 1:
+        return ""
+
+    lines.append("Your scored options must be consistent with these upstream assessments.")
+    return "\n".join(lines)
+
+
+def append_dag_correction(jsonl_path: str, entry: Dict) -> None:
+    """Append one JSONL line to the sidecar audit file (append mode, one call per entry)."""
+    with open(jsonl_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
