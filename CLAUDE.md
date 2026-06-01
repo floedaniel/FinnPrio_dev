@@ -313,6 +313,8 @@ Scripts for managing database operations:
 - `4_db_inspect_database.R`: Database exploration and inspection
 - `5_db_merge_multiple_db.R`: Combine multiple database files
 - `6_db_check_assessor_pest.R`: Verify assessor-pest relationships
+- `9_db_find_errors.R`: Quick diagnostic — prints erroneous answer entries grouped by species and exports to Excel (missing justification, incomplete min/likely/max)
+- `10_db_integrity_check_and_repair.R`: Structural integrity check and optional repair (duplicate/orphaned pathway answers, duplicate/orphaned answers); run with `DRY_RUN = TRUE` first
 
 ### Migration Scripts (`scripts/migration scripts/`)
 
@@ -333,6 +335,8 @@ Scripts for bulk data population with EPPO data and master database management:
 - `5_populate_eppo_distribution.R`: Geographic distribution data
 - `6_sdm_populator.R`: Populates EST1 justification with Maxent SDM model results for Norway/Sweden (reads `model_summary.json` from SDMtune folders)
 - `8_batch_simulation.R`: Batch runs Monte Carlo simulations for all assessments in a FinnPRIO database
+- `9_populate_plot.R`: Extracts simulation summaries from master database and produces risk matrix plots matching the FinnPRIO plotting style
+- `10_populate_master_database.R`: Merges yearly FinnPRIO databases into a cumulative master database; deduplication by EPPO code — replaces existing pest data if the source has a newer simulation
 
 ### Root Level Scripts
 
