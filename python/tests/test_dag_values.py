@@ -11,6 +11,7 @@ from dag_values import (
     get_zero_option,
     topological_sort_answers,
     check_zero_forcing,
+    check_sibling_clamp,
 )
 
 # ─── Shared fixtures ──────────────────────────────────────────────────────────
@@ -184,4 +185,69 @@ def test_check_zero_forcing_original_option_starts_none():
 def test_check_zero_forcing_no_upstream_in_context():
     # EST1 not yet scored — no forcing
     result = check_zero_forcing("IMP1", {}, IMP1_OPTIONS, "minmax")
+    assert result is None
+
+
+# ─── check_sibling_clamp ──────────────────────────────────────────────────────
+
+ENT2B_OPTIONS = ENT2_OPTIONS  # same option list as ENT2A
+
+def test_check_sibling_clamp_all_params_clamped():
+    scored_context = {
+        "ENT2A": {"min": "a", "likely": "b", "max": "c"}
+    }
+    values = {"min": "b", "likely": "d", "max": "e"}
+    options_map = {"ENT2A": ENT2_OPTIONS, "ENT2B": ENT2B_OPTIONS}
+    result = check_sibling_clamp("ENT2B", values, scored_context, options_map)
+    assert result is not None
+    assert result["min"] == "a"    # ENT2B "b"(0.5) > ENT2A "a"(0) → "a"
+    assert result["likely"] == "b" # ENT2B "d"(2) > ENT2A "b"(0.5) → "b"
+    assert result["max"] == "c"    # ENT2B "e"(3) > ENT2A "c"(1) → "c"
+    assert len(result["flags"]) == 3
+
+def test_check_sibling_clamp_no_clamp_needed():
+    scored_context = {
+        "ENT2A": {"min": "c", "likely": "d", "max": "e"}
+    }
+    values = {"min": "a", "likely": "b", "max": "c"}
+    options_map = {"ENT2A": ENT2_OPTIONS, "ENT2B": ENT2B_OPTIONS}
+    result = check_sibling_clamp("ENT2B", values, scored_context, options_map)
+    assert result is None
+
+def test_check_sibling_clamp_partial():
+    scored_context = {
+        "ENT2A": {"min": "b", "likely": "b", "max": "b"}
+    }
+    values = {"min": "a", "likely": "d", "max": "b"}
+    options_map = {"ENT2A": ENT2_OPTIONS, "ENT2B": ENT2B_OPTIONS}
+    result = check_sibling_clamp("ENT2B", values, scored_context, options_map)
+    assert result is not None
+    assert result["min"] == "a"    # "a"(0) <= "b"(0.5) — no clamp
+    assert result["likely"] == "b" # "d"(2) > "b"(0.5) → clamp to "b"
+    assert result["max"] == "b"    # "b"(0.5) == "b"(0.5) — no clamp
+    assert len(result["flags"]) == 1
+
+def test_check_sibling_clamp_captures_original():
+    scored_context = {
+        "ENT2A": {"min": "a", "likely": "b", "max": "c"}
+    }
+    values = {"min": "d", "likely": "d", "max": "d"}
+    options_map = {"ENT2A": ENT2_OPTIONS, "ENT2B": ENT2B_OPTIONS}
+    result = check_sibling_clamp("ENT2B", values, scored_context, options_map)
+    originals = {f["parameter"]: f["original_option"] for f in result["flags"]}
+    assert originals["min"] == "d"
+    assert originals["likely"] == "d"
+    assert originals["max"] == "d"
+
+def test_check_sibling_clamp_wrong_question():
+    scored_context = {"ENT2A": {"min": "a", "likely": "b", "max": "c"}}
+    values = {"min": "d", "likely": "d", "max": "d"}
+    options_map = {"ENT2A": ENT2_OPTIONS}
+    result = check_sibling_clamp("ENT1", values, scored_context, options_map)
+    assert result is None
+
+def test_check_sibling_clamp_missing_sibling_in_context():
+    values = {"min": "d", "likely": "d", "max": "d"}
+    options_map = {"ENT2A": ENT2_OPTIONS, "ENT2B": ENT2B_OPTIONS}
+    result = check_sibling_clamp("ENT2B", values, {}, options_map)
     assert result is None

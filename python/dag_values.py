@@ -179,3 +179,61 @@ def check_zero_forcing(
                 })
 
     return result if any_forced else None
+
+
+def check_sibling_clamp(
+    question_code: str,
+    values: Dict[str, Optional[str]],
+    scored_context: Dict[str, Dict[str, str]],
+    options_map: Dict[str, List[Dict]],
+) -> Optional[Dict]:
+    """Post-GPT sibling clamp (currently ENT2B ≤ ENT2A).
+
+    Compares each parameter's points to the sibling's corresponding parameter.
+    Returns a clamped result dict with flags, or None if no clamp is needed.
+
+    result = {
+        "min": opt, "likely": opt, "max": opt,
+        "flags": [{"parameter", "rule_fired", "original_option", "forced_option"}]
+    }
+    """
+    code = _normalize(question_code)
+    if code not in SIBLING_CONSTRAINTS:
+        return None
+
+    sc = SIBLING_CONSTRAINTS[code]
+    sibling_code = _normalize(sc["sibling"])
+    sibling_scored = scored_context.get(sibling_code)
+    sibling_opts = options_map.get(sibling_code, [])
+    own_opts = options_map.get(code, [])
+
+    if not sibling_scored or not sibling_opts or not own_opts:
+        return None
+
+    sibling_pts: Dict[str, float] = {o["opt"]: float(o["points"]) for o in sibling_opts}
+    own_pts: Dict[str, float] = {o["opt"]: float(o["points"]) for o in own_opts}
+
+    result: Dict = {
+        "min": values.get("min"),
+        "likely": values.get("likely"),
+        "max": values.get("max"),
+        "flags": [],
+    }
+    any_clamped = False
+
+    for param in ("min", "likely", "max"):
+        own_val = values.get(param)
+        sib_val = sibling_scored.get(param)
+        if own_val is None or sib_val is None:
+            continue
+        if own_pts.get(own_val, 0.0) > sibling_pts.get(sib_val, 0.0):
+            result[param] = sib_val
+            any_clamped = True
+            result["flags"].append({
+                "parameter": param,
+                "rule_fired": f"{code}>{sibling_code} clamp",
+                "original_option": own_val,
+                "forced_option": sib_val,
+            })
+
+    return result if any_clamped else None
