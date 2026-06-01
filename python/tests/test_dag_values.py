@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from dag_values import (
     get_zero_option,
+    topological_sort_answers,
 )
 
 # ─── Shared fixtures ──────────────────────────────────────────────────────────
@@ -67,3 +68,46 @@ def test_get_zero_option_no_zero_raises():
 def test_get_zero_option_ent2_half_point():
     # ENT2 has points=0.5 for option "b" — "a" is zero
     assert get_zero_option(ENT2_OPTIONS, "minmax") == "a"
+
+
+# ─── topological_sort_answers ─────────────────────────────────────────────────
+
+def test_topological_sort_est_before_imp():
+    answers = [
+        {"code": "IMP1"},
+        {"code": "EST1"},
+        {"code": "EST2"},
+    ]
+    result = topological_sort_answers(answers, is_pathway=False)
+    codes = [a["code"] for a in result]
+    assert codes.index("EST1") < codes.index("IMP1")
+    assert codes.index("EST2") < codes.index("IMP1")
+
+def test_topological_sort_est2_after_est1():
+    answers = [{"code": "EST2"}, {"code": "EST1"}]
+    result = topological_sort_answers(answers, is_pathway=False)
+    codes = [a["code"] for a in result]
+    assert codes.index("EST1") < codes.index("EST2")
+
+def test_topological_sort_pathway_ent2a_before_ent3():
+    answers = [{"code": "ENT3"}, {"code": "ENT2A"}]
+    result = topological_sort_answers(answers, is_pathway=True)
+    codes = [a["code"] for a in result]
+    assert codes.index("ENT2A") < codes.index("ENT3")
+
+def test_topological_sort_pathway_ent2a_before_ent2b():
+    answers = [{"code": "ENT2B"}, {"code": "ENT2A"}]
+    result = topological_sort_answers(answers, is_pathway=True)
+    codes = [a["code"] for a in result]
+    assert codes.index("ENT2A") < codes.index("ENT2B")
+
+def test_topological_sort_preserves_all_answers():
+    answers = [{"code": "IMP3"}, {"code": "EST4"}, {"code": "EST1"}]
+    result = topological_sort_answers(answers, is_pathway=False)
+    assert len(result) == 3
+
+def test_topological_sort_no_deps_stable():
+    # EST4 has no dependencies — should not crash
+    answers = [{"code": "EST4"}, {"code": "MAN3"}]
+    result = topological_sort_answers(answers, is_pathway=False)
+    assert len(result) == 2

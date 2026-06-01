@@ -85,3 +85,43 @@ def get_zero_option(options: List[Dict], question_type: str = "minmax") -> Optio
             f"No zero-points option found. Options: {[o['opt'] for o in options]}"
         )
     return zero_opts[0]["opt"]
+
+
+def topological_sort_answers(
+    answers: List[Dict], is_pathway: bool = False
+) -> List[Dict]:
+    """Sort answers in dependency order using Kahn's algorithm.
+
+    Uses PATHWAY_VALUES_DEPENDENCIES when is_pathway=True (which adds the
+    ordering-only ENT2A→ENT3 edge), QUESTION_DEPENDENCIES otherwise.
+    Questions not in the dependency map are treated as having no deps.
+    """
+    deps = PATHWAY_VALUES_DEPENDENCIES if is_pathway else QUESTION_DEPENDENCIES
+    code_to_q = {_normalize(q["code"]): q for q in answers}
+    codes = sorted(code_to_q.keys())
+
+    in_degree: Dict[str, int] = {c: 0 for c in codes}
+    adj: Dict[str, List[str]] = {c: [] for c in codes}
+
+    for code in codes:
+        for dep in deps.get(code, []):
+            if dep in code_to_q:
+                in_degree[code] += 1
+                adj[dep].append(code)
+
+    queue = deque(sorted(c for c in codes if in_degree[c] == 0))
+    result: List[Dict] = []
+
+    while queue:
+        node = queue.popleft()
+        result.append(code_to_q[node])
+        for dependent in sorted(adj[node]):
+            in_degree[dependent] -= 1
+            if in_degree[dependent] == 0:
+                queue.append(dependent)
+
+    # Append any remaining (cycle guard — not expected in this schema)
+    processed = {_normalize(q["code"]) for q in result}
+    result.extend(code_to_q[c] for c in codes if c not in processed)
+
+    return result
