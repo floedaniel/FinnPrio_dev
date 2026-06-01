@@ -17,10 +17,9 @@ import json
 import os
 import asyncio
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import argparse
 from datetime import datetime
-import openai
 from openai import AsyncOpenAI
 
 # Import instructions loader for value selection prompts

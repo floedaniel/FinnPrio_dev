@@ -27,7 +27,7 @@ from gpt_researcher.utils.enum import Tone
 from eppo_gd_retriever import register as _register_eppo_gd
 _register_eppo_gd()
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List
 import re
 from collections import deque
 
