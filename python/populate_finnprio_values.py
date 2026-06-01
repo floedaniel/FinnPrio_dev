@@ -596,7 +596,7 @@ class ValuePopulator:
                 final_values: Optional[Dict] = None
                 gpt_values: Optional[Dict] = None
 
-                if forcing is not None and all_forced:
+                if all_forced:
                     final_values = {
                         "min": forcing["min"],
                         "likely": forcing["likely"],
@@ -653,6 +653,11 @@ class ValuePopulator:
                             id_answer, final_values["min"], final_values["likely"], final_values["max"]
                         )
                         print(f"  ✅ Updated")
+                        scored_context[question_code] = {
+                            "min": final_values["min"],
+                            "likely": final_values["likely"],
+                            "max": final_values["max"],
+                        }
 
                     timestamp = datetime.now().isoformat(timespec="seconds")
                     all_flags = list(forcing["flags"] if forcing else [])
@@ -668,12 +673,6 @@ class ValuePopulator:
                             "forced_option": flag.get("forced_option"),
                             "timestamp": timestamp,
                         })
-
-                    scored_context[question_code] = {
-                        "min": final_values["min"],
-                        "likely": final_values["likely"],
-                        "max": final_values["max"],
-                    }
 
                 print()
 
