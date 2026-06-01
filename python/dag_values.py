@@ -159,7 +159,15 @@ def check_zero_forcing(
     """
     rules = PATHWAY_ZERO_FORCING_RULES if is_pathway else ZERO_FORCING_RULES
     code = _normalize(question_code)
-    zero_opt = get_zero_option(options, question_type)
+    try:
+        zero_opt = get_zero_option(options, question_type)
+    except ValueError:
+        # No zero-points option in the DB schema for this question (e.g. ENT3,
+        # whose points are computed via Table 2 at simulation time).
+        # Treat as None — forced parameters will be left unscored, which is
+        # correct: if the upstream rule fires the question's contribution is
+        # already zero by the model formula.
+        zero_opt = None
 
     result: Dict = {"min": None, "likely": None, "max": None, "flags": []}
     any_forced = False
