@@ -20,10 +20,10 @@ os.environ['TAVILY_API_KEY'] = load_api_key(TAVILY_API_KEY_FILE)
 async def main():
 
     # Query
-    query = "what is AI?"
+    query = "Taking into account current official management measures, can the oblique-banded leaf roller (Choristoneura rosaceana) be transported via the pathway Plants for planting from the US to Norway?"
 
     # Report Type
-    report_type = "research_report"
+    report_type = "detailed_report" # options: detailed_report, research_report
 
     # Initialize the researcher
     researcher = GPTResearcher(query=query, report_type=report_type, config_path=None)

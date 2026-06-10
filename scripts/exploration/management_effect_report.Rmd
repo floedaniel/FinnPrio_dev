@@ -1,0 +1,409 @@
+---
+title: "FinnPRIO — Effect of Management and Import Restrictions on Risk"
+subtitle: "Phytosanitary measures (ENT2A vs ENT2B) versus import volume (ENT3)"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    df_print: paged
+params:
+  db_path: "databases/master_database/finnprio_master.db"
+  zero_tol: 0.000001
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 9, fig.height = 5.5, dpi = 110)
+
+# Resolve all relative paths (db_path, CSV exports) from the project root so the
+# report behaves the same whether knit from the Rmd folder or the project root.
+# Applies from the NEXT chunk onward.
+.input  <- tryCatch(knitr::current_input(dir = TRUE), error = function(e) NA)
+.root   <- if (!is.na(.input)) {
+  normalizePath(file.path(dirname(.input), "..", ".."))
+} else {
+  normalizePath(getwd())
+}
+knitr::opts_knit$set(root.dir = .root)
+
+library(DBI)
+library(RSQLite)
+library(tidyverse)
+library(jsonlite)
+library(DT)
+library(patchwork)
+
+is_zero <- function(x) !is.na(x) & x <= params$zero_tol
+
+theme_set(theme_minimal(base_size = 12) +
+            theme(panel.grid.minor = element_blank(),
+                  plot.title = element_text(face = "bold")))
+```
+
+```{r connect, include=FALSE}
+# ---- READ-ONLY connection -------------------------------------------------
+# Opened with SQLITE_RO so this report can never write to the master database.
+db_path <- params$db_path
+stopifnot(file.exists(db_path))
+con <- dbConnect(RSQLite::SQLite(), db_path, flags = RSQLite::SQLITE_RO)
+knitr::knit_hooks$set(document = function(x) { try(dbDisconnect(con), silent = TRUE); x })
+dir.create("scripts/exploration/output", showWarnings = FALSE, recursive = TRUE)
+
+pal_shift <- c("No change"     = "#9e9e9e",
+               "1 step lower"  = "#4daf4a",
+               "≥2 steps lower"= "#1b7837",
+               "Higher (invalid)" = "#d73027")
+```
+
+```{r load-data}
+# ---- Raw tables -----------------------------------------------------------
+assessments <- dbReadTable(con, "assessments")
+pests       <- dbReadTable(con, "pests")
+sims        <- dbReadTable(con, "simulations")
+simsum      <- dbReadTable(con, "simulationSummaries")
+pwAnswers   <- dbReadTable(con, "pathwayAnswers")
+entryPath   <- dbReadTable(con, "entryPathways")
+pathways    <- dbReadTable(con, "pathways")
+pwQuestions <- dbReadTable(con, "pathwayQuestions")
+questions   <- dbReadTable(con, "questions")
+answers     <- dbReadTable(con, "answers")
+taxa        <- dbReadTable(con, "taxonomicGroups")
+
+# ---- Option -> points lookups (parsed from the `list` JSON) ---------------
+parse_points <- function(df, id_col) {
+  map_dfr(seq_len(nrow(df)), function(i) {
+    lst <- jsonlite::fromJSON(df[["list"]][i])
+    tibble(qid = df[[id_col]][i],
+           opt = as.character(lst$opt),
+           points = as.numeric(lst$points))
+  })
+}
+pw_points <- parse_points(pwQuestions, "idPathQuestion")   # ENT2A=1, ENT2B=2, ENT3=3, ENT4=4
+q_points  <- parse_points(questions,   "idQuestion")
+
+# ---- Latest simulation per assessment -------------------------------------
+latest_sim <- sims %>%
+  group_by(idAssessment) %>%
+  slice_max(idSimulation, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+# ---- Wide risk variables (medians + 5/95% bounds) -------------------------
+risk_wide <- simsum %>%
+  filter(idSimulation %in% latest_sim$idSimulation) %>%
+  select(idSimulation, variable, median, q5, q95) %>%
+  pivot_wider(names_from = variable, values_from = c(median, q5, q95))
+
+# ---- Species-level table --------------------------------------------------
+tax_lookup <- taxa %>% rename(idTaxa = 1, taxGroup = 2)
+
+species <- latest_sim %>%
+  select(idAssessment, idSimulation) %>%
+  left_join(assessments %>% select(idAssessment, idPest, idAssessor,
+                                   finished, valid), by = "idAssessment") %>%
+  left_join(pests %>% select(idPest, scientificName, eppoCode, idTaxa), by = "idPest") %>%
+  left_join(tax_lookup %>% select(idTaxa, taxGroup), by = "idTaxa") %>%
+  left_join(risk_wide, by = "idSimulation") %>%
+  mutate(taxGroup = ifelse(is.na(taxGroup), "Unknown", taxGroup))
+
+n_species <- nrow(species)
+```
+
+```{r answer-prep}
+# Attach points to each pathway answer for ENT2A/ENT2B/ENT3/ENT4.
+# pwAnswers store the option code (a,b,c,...) in min/likely/max.
+pw_long <- pwAnswers %>%
+  select(idEntryPathway, idPathQuestion, min, likely, max) %>%
+  left_join(entryPath %>% select(idEntryPathway, idAssessment, idPathway),
+            by = "idEntryPathway") %>%
+  left_join(pathways %>% select(idPathway, pathName = name, group), by = "idPathway") %>%
+  # only keep the simulated assessments
+  filter(idAssessment %in% species$idAssessment)
+
+points_for <- function(qid, opt_vec) {
+  lk <- pw_points %>% filter(qid == !!qid) %>% select(opt, points)
+  tibble(opt = as.character(opt_vec)) %>%
+    left_join(lk, by = "opt") %>% pull(points)
+}
+
+# ENT2A (qid 1) vs ENT2B (qid 2) on the `likely` answer, per pathway
+ent2 <- pw_long %>%
+  filter(idPathQuestion %in% c(1, 2)) %>%
+  select(idEntryPathway, idAssessment, idPathway, pathName, group,
+         idPathQuestion, likely) %>%
+  pivot_wider(names_from = idPathQuestion, values_from = likely,
+              names_prefix = "q") %>%
+  rename(ent2a_opt = q1, ent2b_opt = q2) %>%
+  mutate(ent2a_pts = points_for(1, ent2a_opt),
+         ent2b_pts = points_for(2, ent2b_opt),
+         delta = ent2b_pts - ent2a_pts,
+         shift = case_when(
+           is.na(delta)            ~ NA_character_,
+           delta > 0               ~ "Higher (invalid)",
+           delta == 0              ~ "No change",
+           ent2a_pts - ent2b_pts <= 1 ~ "1 step lower",
+           TRUE                    ~ "≥2 steps lower"))
+
+# ENT3 (qid 3) import volume on the `likely` answer, per pathway
+ent3 <- pw_long %>%
+  filter(idPathQuestion == 3) %>%
+  select(idEntryPathway, idAssessment, idPathway, group, likely) %>%
+  mutate(ent3_pts = points_for(3, likely),
+         ent3_cat = factor(recode(as.character(likely),
+                                  a = "Non-existent", b = "Small",
+                                  c = "Medium", d = "Large"),
+                            levels = c("Non-existent","Small","Medium","Large")))
+
+# Species-level import volume: highest import category across pathways
+species_import <- ent3 %>%
+  group_by(idAssessment) %>%
+  summarise(max_import_pts = if (all(is.na(ent3_pts))) NA_real_ else max(ent3_pts, na.rm = TRUE),
+            n_pathways = n(),
+            n_nonexistent = sum(ent3_pts == 0, na.rm = TRUE),
+            n_answered = sum(!is.na(ent3_pts)),
+            .groups = "drop") %>%
+  mutate(zero_import = n_answered > 0 & n_nonexistent == n_answered,
+         max_import_cat = factor(recode(as.character(max_import_pts),
+                                        `0` = "Non-existent", `1` = "Small",
+                                        `2` = "Medium", `3` = "Large"),
+                                 levels = c("Non-existent","Small","Medium","Large")))
+
+species <- species %>% left_join(species_import, by = "idAssessment")
+```
+
+```{r headline-metrics}
+# Management (A vs B) effect on risk, per species
+mgmt <- species %>%
+  transmute(idAssessment, scientificName, taxGroup, valid, finished,
+            riskA = median_RISKA, riskB = median_RISKB,
+            entryA = median_ENTRYA, entryB = median_ENTRYB,
+            establishment = median_ESTABLISHMENT, impact = median_IMPACT,
+            abs_reduction = riskA - riskB,
+            rel_reduction = ifelse(riskA > params$zero_tol,
+                                   (riskA - riskB) / riskA, NA_real_))
+
+n_no_mgmt_effect <- sum(abs(mgmt$abs_reduction) <= params$zero_tol, na.rm = TRUE)
+pct_no_effect    <- n_no_mgmt_effect / nrow(mgmt)
+# Effect among species where measures actually change risk (RISK A > 0 and A != B)
+affected <- mgmt %>% filter(riskA > params$zero_tol, abs_reduction > params$zero_tol)
+median_rel_affected <- median(affected$rel_reduction, na.rm = TRUE)
+n_affected   <- nrow(affected)
+n_zero_import    <- sum(species$zero_import, na.rm = TRUE)
+# Scenario B (with current measures) is the operative real-world risk;
+# A (no measures) is the counterfactual used only to size the management effect.
+n_zero_riskB     <- sum(is_zero(species$median_RISKB))   # actual: with measures
+n_zero_riskA     <- sum(is_zero(species$median_RISKA))   # counterfactual: no measures
+n_pushed_to_zero <- n_zero_riskB - n_zero_riskA          # extra species zeroed by measures
+```
+
+<style>
+#report-sections > h1 { display: none; }   /* hide the tabset wrapper heading */
+.nav-pills { margin-bottom: 1.4em; }
+.tab-pane { padding-top: 1.4em; }
+.tab-content > .tab-pane h3 { margin-top: 1.8em; }
+.tab-content > .tab-pane > p { margin-bottom: 1.1em; }
+blockquote { margin: 1.4em 0; }
+</style>
+
+# Report sections {.tabset .tabset-pills .tabset-fade}
+
+## 1. Headline findings
+
+This report uses the **latest stored simulation** for each of the
+**`r n_species`** assessments in `finnprio_master.db` that have been simulated.
+All figures are observational — read directly from the saved Monte-Carlo
+summaries and the assessors' answer codes. No re-simulation is performed and the
+database is opened read-only.
+
+> **Phytosanitary measures leave most species unchanged — but are not weak
+> where they apply.**
+> Comparing scenario A (`ENT2A`, *no* official measures) with scenario B
+> (`ENT2B`, *with* measures), the median risk is **identical** for
+> **`r n_no_mgmt_effect`** of `r n_species` species
+> (`r scales::percent(pct_no_effect, accuracy = 1)`) — the assessors gave the
+> same `ENT2A` and `ENT2B` answers. For the **`r n_affected`** species where the
+> answers *do* differ, however, risk falls by a median of
+> **`r scales::percent(median_rel_affected, accuracy = 1)`**. Because `ENT2` is a
+> *multiplicative* factor of entry, even a one-category answer change — which can
+> look minor to an assessor — roughly halves risk. "Almost no difference in the
+> answers" is therefore not the same as "almost no difference in risk".
+>
+> **No import sets risk to zero.**
+> **`r n_zero_import`** species have *Non-existent* import volume (`ENT3`) on
+> every entry pathway. Under current measures (scenario **B**, the operative
+> risk) **`r n_zero_riskB`** species sit at median risk 0; without measures
+> (scenario **A**) it would be **`r n_zero_riskA`** — so the measures push only
+> **`r n_pushed_to_zero`** additional species to zero. Section 4 shows how much of
+> the zero-risk set is driven by no-import versus establishment or impact.
+>
+> *Throughout, scenario **B** (with current official measures) is the default
+> "actual" risk; scenario **A** appears only to quantify the management effect.*
+
+```{r headline-table}
+mgmt %>%
+  summarise(
+    `Species (simulated)`             = n(),
+    `Median risk A (no measures)`     = round(median(riskA, na.rm = TRUE), 4),
+    `Median risk B (with measures)`   = round(median(riskB, na.rm = TRUE), 4),
+    `Species unchanged by measures`   = paste0(n_no_mgmt_effect, " (",
+                                          scales::percent(pct_no_effect, accuracy = 1), ")"),
+    `Species where measures differ`   = n_affected,
+    `Median reduction where differ`   = scales::percent(median_rel_affected, accuracy = 1),
+    `Zero-import species`             = n_zero_import,
+    `Species at risk 0 (B, actual)`   = n_zero_riskB,
+    `Species at risk 0 (A, no measures)` = n_zero_riskA) %>%
+  pivot_longer(everything(), names_to = "Metric", values_to = "Value",
+               values_transform = as.character) %>%
+  knitr::kable()
+```
+
+## 2. Effect of phytosanitary measures (ENT2A vs ENT2B)
+
+`ENT2A` asks how readily the pest could be transferred on a pathway **without**
+official management measures; `ENT2B` asks the same **with** current measures in
+place. Risk in scenario B should therefore be ≤ scenario A. If the two answers
+are similar, measures have little modelled effect.
+
+### 2.1 Risk with vs without measures
+
+```{r p-risk-scatter, fig.height=5.5}
+lim <- max(c(mgmt$riskA, mgmt$riskB), na.rm = TRUE)
+ggplot(mgmt, aes(riskA, riskB)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_point(aes(colour = taxGroup), size = 2.4, alpha = 0.8) +
+  coord_equal(xlim = c(0, lim), ylim = c(0, lim)) +
+  labs(title = "Measures: no change for most species, large effect where they apply",
+       subtitle = "Points on the dashed line = measures had no effect; points below = risk reduced",
+       x = "Median RISK A (no measures)", y = "Median RISK B (with measures)",
+       colour = "Taxonomic group") +
+  theme(legend.position = "right", legend.text = element_text(size = 8))
+```
+
+## 3. Effect of import volume (ENT3 / "no import")
+
+`ENT3` records the volume of host commodity imported: *Non-existent* (0),
+*Small* (1), *Medium* (2), *Large* (3). For a group-1 pathway the entry score is
+proportional to `ENT3`, so *Non-existent* import drives that pathway's entry — and
+the resulting risk — to zero. Risk is shown for the actual scenario **B** (with
+current measures); scenario A is overlaid to show how little the measures shift
+risk at any import level.
+
+### 3.1 Risk rises with import volume
+
+```{r p-risk-by-import, fig.height=5}
+species %>%
+  filter(!is.na(max_import_cat)) %>%
+  select(max_import_cat, `B (with measures)` = median_RISKB,
+         `A (no measures)` = median_RISKA) %>%
+  pivot_longer(c(`B (with measures)`, `A (no measures)`),
+               names_to = "Scenario", values_to = "risk") %>%
+  mutate(Scenario = factor(Scenario,
+                           levels = c("B (with measures)", "A (no measures)"))) %>%
+  ggplot(aes(max_import_cat, risk, fill = Scenario)) +
+  geom_boxplot(outlier.shape = NA, position = position_dodge(0.8), width = 0.7) +
+  scale_fill_manual(values = c("B (with measures)" = "#1f78b4",
+                               "A (no measures)"   = "#a6cee3")) +
+  labs(title = "Higher import volume, higher risk — measures barely shift it",
+       subtitle = paste("Species grouped by their highest ENT3 import category.",
+                        "B (dark) is the actual risk; A (light) the no-measure case."),
+       x = "Maximum import volume (ENT3) across pathways",
+       y = "Median RISK", fill = "Scenario")
+```
+
+## 4. Why is risk zero? Driver decomposition
+
+Risk = `IMPACT × ENTRY × ESTABLISHMENT`. Any factor of zero forces risk to zero.
+This uses the **actual** scenario **B** (with current measures): of
+**`r n_zero_riskB`** species at median risk 0, the measures account for only
+**`r n_pushed_to_zero`** (without measures `r n_zero_riskA` would still be zero).
+For each zero-risk species we flag which component(s) are zero, so "no import" can
+be compared against establishment and impact as the binding constraint.
+
+```{r driver-decomp}
+zero_risk <- species %>%
+  filter(is_zero(median_RISKB)) %>%
+  mutate(
+    z_entry = is_zero(median_ENTRYB),
+    z_estab = is_zero(median_ESTABLISHMENT),
+    z_impact = is_zero(median_IMPACT),
+    # within zero entry, is it driven by no import?
+    entry_no_import = z_entry & zero_import %in% TRUE)
+
+# count each binding component (a species can have several)
+driver_counts <- tibble(
+  Driver = c("Entry = 0", "  ↳ of which: all imports Non-existent",
+             "Establishment = 0", "Impact = 0"),
+  Species = c(sum(zero_risk$z_entry),
+              sum(zero_risk$entry_no_import),
+              sum(zero_risk$z_estab),
+              sum(zero_risk$z_impact)))
+knitr::kable(driver_counts,
+             caption = paste0("Binding zero components among the ",
+                              nrow(zero_risk),
+                              " species at median risk 0 (components can co-occur)"))
+```
+
+```{r p-driver-bar, fig.height=4.5}
+zero_risk %>%
+  transmute(scientificName,
+            `Entry = 0`         = z_entry,
+            `Establishment = 0` = z_estab,
+            `Impact = 0`        = z_impact) %>%
+  pivot_longer(-scientificName, names_to = "Component", values_to = "is_zero") %>%
+  filter(is_zero) %>%
+  count(Component) %>%
+  ggplot(aes(reorder(Component, n), n)) +
+  geom_col(fill = "#41b6c4") +
+  geom_text(aes(label = n), hjust = -0.2) +
+  coord_flip() +
+  expand_limits(y = max(driver_counts$Species) * 1.1) +
+  labs(title = "What forces risk to zero?",
+       subtitle = paste0(nrow(zero_risk), " species at median risk 0 — ",
+                         "components can co-occur"),
+       x = NULL, y = "Species with this component = 0")
+```
+
+## 5. The two levers contrasted
+
+```{r levers-contrast}
+contrast <- tibble(
+  Lever = c("Phytosanitary measures (ENT2A → ENT2B)",
+            "No import (ENT3 = Non-existent)"),
+  Mechanism = c("Reduces ENT2 by ~0–1 category; multiplies one factor of entry",
+                "Sets the ENT3 factor of entry to 0 for group-1 pathways"),
+  `Effect on risk` = c(
+     paste0("No change for ", n_no_mgmt_effect, "/", n_species,
+            " species; where answers differ, median ",
+            scales::percent(median_rel_affected, accuracy = 1), " reduction"),
+     paste0("Risk collapses to 0 (", n_zero_import,
+            " zero-import species)")))
+knitr::kable(contrast)
+```
+
+**Interpretation.** The assessors' observation is half right. In the stored
+answers, official phytosanitary measures (`ENT2B`) very often equal the unmanaged
+case (`ENT2A`): `r n_no_mgmt_effect` of `r n_species` species
+(`r scales::percent(pct_no_effect, accuracy = 1)`) show no difference at all. But
+where the answers *do* differ — typically by a single category — risk does not
+move "only slightly": because `ENT2` enters the entry score multiplicatively, a
+one-step drop (e.g. *Large* → *Medium*) roughly halves it, giving a median
+reduction of `r scales::percent(median_rel_affected, accuracy = 1)` among affected
+species. The practical lesson is that the perceived "small" gap between `ENT2A`
+and `ENT2B` understates the modelled risk consequence. A *Non-existent* import
+volume is different in kind: it removes a multiplicative factor of entry outright,
+which is why "no import" drives risk to zero — although Section 4 shows that for
+many species zero risk is actually set by establishment or impact, not by import
+at all.
+
+```{r session, include=FALSE}
+try(dbDisconnect(con), silent = TRUE)
+```
+
+---
+
+*Generated read-only from ``r params$db_path``. Methods: latest simulation per
+assessment; medians from `simulationSummaries`; option→point maps parsed from the
+question `list` JSON; all answer comparisons use the "likely" value.*

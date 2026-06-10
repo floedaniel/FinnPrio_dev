@@ -340,6 +340,12 @@ Scripts for bulk data population with EPPO data and master database management:
 - `9_populate_plot.R`: Extracts simulation summaries from master database and produces risk matrix plots matching the FinnPRIO plotting style
 - `10_populate_master_database.R`: Merges yearly FinnPRIO databases into a cumulative master database; deduplication by EPPO code — replaces existing pest data if the source has a newer simulation
 
+### Exploration / Analysis Scripts (`scripts/exploration/`)
+
+Ad-hoc analysis of a populated database; **read-only** with respect to the source DB. Generated artifacts go to `scripts/exploration/output/` (gitignored — can be large).
+
+- `management_effect_report.Rmd`: Tabbed HTML report on how risk responds to the two entry-side levers — phytosanitary measures (`ENT2A` vs `ENT2B`) and import volume (`ENT3`). Uses the latest stored Monte-Carlo summary per assessment (no re-simulation). **Scenario B (with current measures) is the default "actual" risk**; A is shown only to size the management effect. Render with `rmarkdown::render("scripts/exploration/management_effect_report.Rmd")`; `params$db_path` defaults to the master DB and resolves from the project root.
+
 ### Root Level Scripts
 
 - `0_clean_session.R`: Clear R environment (quick reset during development)

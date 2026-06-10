@@ -12,6 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added - June 2026
 
+#### Management-effect analysis report (`scripts/exploration/management_effect_report.Rmd`) — 2026-06-10
+
+- **New R Markdown report** analysing how risk responds to the two entry-side levers in the master database, opened **read-only**. Renders a tabbed (page-by-page) HTML over all 129 simulated assessments using the latest stored Monte-Carlo summary per assessment — observational, no re-simulation.
+- **Scenario B (with current official measures) is the default "actual" risk** throughout; scenario A (no measures) appears only to quantify the management effect, with the A-vs-B difference highlighted rather than hidden.
+- **Findings surfaced**: phytosanitary measures (`ENT2A`→`ENT2B`) leave median risk unchanged for the majority of species, but where the answers differ — typically one category — risk roughly halves, because `ENT2` is a multiplicative factor of entry; "no import" (`ENT3` = Non-existent) collapses entry to zero; and a driver decomposition shows establishment, not import, is the most common cause of zero risk.
+- **Sections**: headline metrics, measures effect (RISK A vs B scatter), risk vs import volume (B foreground, A overlaid), zero-risk driver decomposition, two-lever contrast.
+
+#### Master-database merge rework (`scripts/populate database scripts/7_populate_database.R`) — 2026-06-10
+
+- Merge logic restructured into explicit phases: collect assessments with answer counts from all source databases, **drop empty (0-answer) assessments**, **deduplicate by EPPO code keeping the latest `endDate`**, then insert winners while building old→new ID maps for pests, assessors, and assessments. Adds per-source read/skip counts to the summary report.
+
+#### Risk-matrix plotting fixes (`scripts/populate database scripts/9_populate_plot.R`) — 2026-06-10
+
+- **Risk scores now read `RISKA`/`RISKB` medians directly** from the simulation summaries instead of recomputing them as a product of component medians (which is not equal to the median of the product). Removed redundant rounding.
+- Added a **side-by-side plot** function contrasting impact against invasion for scenarios A and B (dual panels via `patchwork`).
+
 #### DAG enforcement layer for `populate_finnprio_values.py` — 2026-06-01
 
 - **`python/dag_values.py`** (new): stateless enforcement module implementing four rules from Heikkila et al. (2016): EST1=a → IMP zero, EST2=a → IMP zero (both p. 1832), ENT2A=a → ENT3 zero (Table 2), ENT2B ≤ ENT2A clamp. Enforcement is parameter-wise (min/likely/max independently).
