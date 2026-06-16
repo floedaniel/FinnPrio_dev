@@ -245,10 +245,69 @@ cat(sprintf("  Pests: %d merged (%d deduplicated by EPPO code)\n\n",
             nrow(pests_to_insert), n_dedup_pests))
 
 # =============================================================================
-# MERGE ASSESSMENTS
+# MERGE ASSESSMENTS (collect → drop empty → deduplicate by EPPO → insert)
 # =============================================================================
 cat("=== Merging Assessments ===\n")
 
+# Phase 1: collect all assessments with answer counts from all source files
+all_assessments_raw <- list()
+for (i in seq_len(nrow(source_files))) {
+  src <- source_files$source_db[i]
+  fp  <- source_files$path[i]
+  tryCatch({
+    con <- dbConnect(SQLite(), fp)
+    rows <- dbReadTable(con, "assessments")
+    ans_counts <- dbGetQuery(con,
+      "SELECT idAssessment, COUNT(*) AS n_answers FROM answers GROUP BY idAssessment")
+    dbDisconnect(con)
+    if (nrow(rows) == 0) return(NULL)
+    rows$file_path <- fp
+    rows <- rows |>
+      left_join(ans_counts, by = "idAssessment") |>
+      mutate(n_answers = coalesce(n_answers, 0L))
+    all_assessments_raw[[i]] <- rows
+  }, error = function(e) {
+    try(dbDisconnect(con), silent = TRUE)
+    warn_skip(paste("Cannot read assessments from", src, ":", e$message))
+  })
+}
+
+all_assessments_df <- bind_rows(all_assessments_raw)
+
+# Track raw reads per source for the summary report
+n_ass_read <- setNames(integer(nrow(source_files)), source_files$path)
+for (fp in names(n_ass_read))
+  n_ass_read[fp] <- sum(all_assessments_df$file_path == fp, na.rm = TRUE)
+
+# Attach EPPO code via the pests collected earlier
+eppo_lookup <- all_pests_df |> select(file_path, old_idPest = idPest, eppoCode)
+all_assessments_df <- all_assessments_df |>
+  left_join(eppo_lookup, by = c("file_path", "idPest" = "old_idPest"))
+
+# Phase 2: drop empty assessments (0 answers), then keep latest endDate per EPPO
+n_empty   <- sum(all_assessments_df$n_answers == 0)
+non_empty <- all_assessments_df[all_assessments_df$n_answers > 0, ]
+
+has_eppo_ass  <- !is.na(non_empty$eppoCode) & trimws(non_empty$eppoCode) != ""
+with_eppo_ass <- non_empty[has_eppo_ass, ]
+no_eppo_ass   <- non_empty[!has_eppo_ass, ]
+
+best_with_eppo <- with_eppo_ass |>
+  mutate(eppo_key = toupper(trimws(eppoCode))) |>
+  arrange(eppo_key, desc(!is.na(endDate)), desc(endDate)) |>
+  group_by(eppo_key) |>
+  slice_head(n = 1) |>
+  ungroup()
+
+n_dedup_ass <- nrow(with_eppo_ass) - nrow(best_with_eppo)
+if (n_empty > 0)
+  cat(sprintf("  Dropped %d empty assessment(s) (0 answers)\n", n_empty))
+if (n_dedup_ass > 0)
+  cat(sprintf("  Dropped %d duplicate(s) — kept latest endDate per EPPO code\n", n_dedup_ass))
+
+assessments_to_insert <- bind_rows(best_with_eppo, no_eppo_ass)
+
+# Phase 3: insert winners and build ID mapping
 assessment_id_map <- data.frame(
   file_path        = character(),
   old_idAssessment = integer(),
@@ -256,54 +315,40 @@ assessment_id_map <- data.frame(
   stringsAsFactors = FALSE
 )
 n_skipped_ass <- 0L
-n_ass_read    <- setNames(integer(nrow(source_files)), source_files$path)
 
-for (i in seq_len(nrow(source_files))) {
-  src <- source_files$source_db[i]
-  fp  <- source_files$path[i]
-  tryCatch({
-    con <- dbConnect(SQLite(), fp)
-    rows <- dbReadTable(con, "assessments")
-    dbDisconnect(con)
-    if (nrow(rows) == 0) next
-    n_ass_read[fp] <- n_ass_read[fp] + nrow(rows)
+for (j in seq_len(nrow(assessments_to_insert))) {
+  ass <- assessments_to_insert[j, ]
+  fp  <- ass$file_path
+  src <- source_files$source_db[source_files$path == fp]
 
-    for (j in seq_len(nrow(rows))) {
-      ass <- rows[j, ]
+  new_pest <- pest_id_map |>
+    filter(file_path == fp, old_idPest == ass$idPest) |>
+    pull(new_idPest)
+  new_assessor <- assessor_id_map |>
+    filter(file_path == fp, old_idAssessor == ass$idAssessor) |>
+    pull(new_idAssessor)
 
-      new_pest <- pest_id_map %>%
-        filter(file_path == fp, old_idPest == ass$idPest) %>%
-        pull(new_idPest)
-      new_assessor <- assessor_id_map %>%
-        filter(file_path == fp, old_idAssessor == ass$idAssessor) %>%
-        pull(new_idAssessor)
+  if (length(new_pest) == 0 || length(new_assessor) == 0) {
+    warn_skip(paste("Assessment", ass$idAssessment, "from", src,
+                    "- missing pest/assessor mapping, skipping"))
+    n_skipped_ass <- n_skipped_ass + 1L
+    next
+  }
 
-      if (length(new_pest) == 0 || length(new_assessor) == 0) {
-        warn_skip(paste("Assessment", ass$idAssessment, "from", src,
-                        "- missing pest/assessor mapping, skipping"))
-        n_skipped_ass <- n_skipped_ass + 1L
-        next
-      }
+  dbExecute(con_out,
+    "INSERT INTO assessments (idPest, idAssessor, startDate, endDate,
+                              finished, valid, notes, version, hosts,
+                              potentialEntryPathways, reference)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    params = list(new_pest[1], new_assessor[1],
+                  ass$startDate, ass$endDate, ass$finished, ass$valid,
+                  ass$notes, ass$version, ass$hosts,
+                  ass$potentialEntryPathways, ass$reference))
 
-      dbExecute(con_out,
-        "INSERT INTO assessments (idPest, idAssessor, startDate, endDate,
-                                  finished, valid, notes, version, hosts,
-                                  potentialEntryPathways, reference)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        params = list(new_pest[1], new_assessor[1],
-                      ass$startDate, ass$endDate, ass$finished, ass$valid,
-                      ass$notes, ass$version, ass$hosts,
-                      ass$potentialEntryPathways, ass$reference))
-
-      new_id <- dbGetQuery(con_out, "SELECT last_insert_rowid() AS id")$id
-      assessment_id_map <- rbind(assessment_id_map, data.frame(
-        file_path = fp, old_idAssessment = ass$idAssessment,
-        new_idAssessment = new_id, stringsAsFactors = FALSE))
-    }
-  }, error = function(e) {
-    try(dbDisconnect(con), silent = TRUE)
-    warn_skip(paste("Cannot read assessments from", src, ":", e$message))
-  })
+  new_id <- dbGetQuery(con_out, "SELECT last_insert_rowid() AS id")$id
+  assessment_id_map <- rbind(assessment_id_map, data.frame(
+    file_path = fp, old_idAssessment = ass$idAssessment,
+    new_idAssessment = new_id, stringsAsFactors = FALSE))
 }
 
 cat(sprintf("  Assessments: %d merged (%d skipped)\n\n",

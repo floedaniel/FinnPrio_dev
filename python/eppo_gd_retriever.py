@@ -203,6 +203,7 @@ def register() -> None:
         return
 
     import gpt_researcher.actions.retriever as gr_factory
+    import gpt_researcher.retrievers.utils as gr_utils
 
     _original_get_retriever = gr_factory.get_retriever
 
@@ -212,5 +213,19 @@ def register() -> None:
         return _original_get_retriever(name)
 
     gr_factory.get_retriever = get_retriever
+
+    # Also patch the validator so eppo_gd passes the retriever allowlist check
+    # (get_all_retriever_names scans the retrievers/ directory and misses dynamic
+    # registrations like this one).
+    _original_get_all = gr_utils.get_all_retriever_names
+
+    def get_all_retriever_names():
+        names = _original_get_all()
+        if "eppo_gd" not in names:
+            names.append("eppo_gd")
+        return names
+
+    gr_utils.get_all_retriever_names = get_all_retriever_names
+
     _REGISTERED = True
-    logger.debug("EPPOGDSearch registered with gpt_researcher factory")
+    logger.debug("EPPOGDSearch registered with gpt_researcher factory and validator")

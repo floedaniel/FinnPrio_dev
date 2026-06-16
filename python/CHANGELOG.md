@@ -7,6 +7,20 @@ All notable changes to the Python AI enhancement scripts.
 
 ---
 
+## [2026-06-16] - Deep research routing + eppo_gd validator fix
+
+### Added
+
+- **`DEEP_RESEARCH_QUESTIONS`** constant in `populate_finnprio_justifications.py` — set of question codes that use `report_type="deep"` (recursive tree-like exploration) instead of `"research_report"`. Current members: `ENT2A`, `ENT2B`, `EST1`, `EST2`, `IMP1`. ENT2 appears as pathway questions in the DB (not plain ENT2), so both A/B variants are included.
+- **Per-question `report_type` routing** in `research_justification()`: normalises the question code (strips trailing dot) and selects `"deep"` or `"research_report"` before constructing the `GPTResearcher` instance.
+- **`logging.info` line** before the `GPTResearcher` constructor — logs `[species] question_code: report_type=<type>` for every research call.
+
+### Fixed
+
+- **`eppo_gd_retriever.register()`** now patches both the retriever factory (`get_retriever`) **and** the validator (`get_all_retriever_names`). Previously, deep research mode validated retrievers against a filesystem directory scan and rejected `eppo_gd` (falling back silently to `tavily`), while standard mode worked fine. The validator patch appends `"eppo_gd"` to the allowed list so it is accepted in all modes — including `report_type="deep"`.
+
+---
+
 ## [2026-06-01] - DAG enforcement layer for populate_finnprio_values.py
 
 ### Added

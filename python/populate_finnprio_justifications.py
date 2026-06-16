@@ -132,6 +132,10 @@ EXCLUDED_DOMAINS = [
     "wikipedia.org",
 ]
 
+# Questions that receive recursive deep research (more thorough, slower).
+# ENT2 appears in the DB as pathway questions ENT2A/ENT2B, not plain ENT2.
+DEEP_RESEARCH_QUESTIONS = {"ENT2A", "ENT2B", "EST1", "EST2", "IMP1"}
+
 # Extra domains excluded for ENT3 — alternative trade databases that
 # the AI should never cite when SSB table 08801 is the required source
 ENT3_EXCLUDED_DOMAINS = [
@@ -1044,16 +1048,27 @@ async def research_justification(pest_name: str, question_code: str, question_te
                                   exclude_domains=exclude_domains,
                                   prior_context=prior_context)
 
+    # Route to deep recursive research for high-priority questions
+    norm_q = normalize_code(question_code)
+    report_type = "deep" if norm_q in DEEP_RESEARCH_QUESTIONS else "research_report"
+    logging.info("[%s] %s: report_type=%s", pest_name, question_code, report_type)
+
     # For ENT3: switch to hybrid Tavily+MCP retriever, restore after
     original_retriever = os.environ.get("RETRIEVER", "")
+    original_curate = os.environ.get("CURATE_SOURCES", "")
     if mcp_configs:
         os.environ["RETRIEVER"] = "tavily,mcp"
         os.environ["MCP_AUTO_TOOL_SELECTION"] = "true"
+    if report_type == "deep":
+        # curator.py calls json.loads() on the SMART_LLM response; gpt-4.1 wraps
+        # its reply in markdown fences when the source list is large, causing a
+        # guaranteed parse failure and a wasted LLM call. Disable for deep mode.
+        os.environ["CURATE_SOURCES"] = "false"
 
     try:
         researcher_kwargs = dict(
             query=query,
-            report_type="research_report",
+            report_type=report_type,
             tone=Tone.Formal,
             report_source="web",
         )
@@ -1089,6 +1104,8 @@ async def research_justification(pest_name: str, question_code: str, question_te
         if mcp_configs:
             os.environ["RETRIEVER"] = original_retriever
             os.environ.pop("MCP_AUTO_TOOL_SELECTION", None)
+        if report_type == "deep":
+            os.environ["CURATE_SOURCES"] = original_curate
 
 # =============================================================================
 # MAIN WORKFLOW
@@ -1436,5 +1453,5 @@ if __name__ == "__main__":
         process_pathways=not args.no_pathways,
         skip_existing=skip_existing,
         eppo_codes=args.eppo_codes,
-        question_filter=args.question
+        question_filter=args.question,
     ))

@@ -18,7 +18,7 @@ OUTPUT_DIR <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_
 ONLY_FINISHED     <- FALSE   # TRUE = exclude unfinished assessments
 ONLY_VALID        <- FALSE   # TRUE = only valid assessments
 EXPORT_DATA       <- TRUE    # export wide data frame as Excel alongside plots
-REFERENCE_SPECIES <- c("XXXXX", "XX!X!X!" ) # excluded from plots
+REFERENCE_SPECIES <- c("ERWIAM", "AGRLAX" ) # excluded from plots
 
 # ==============================================================================
 # 1. LIBRARIES
@@ -30,6 +30,7 @@ library(tidyverse)
 library(readxl)
 library(ggrepel)
 library(ragg)
+library(patchwork)
 
 
 # ==============================================================================
@@ -83,19 +84,18 @@ df <- sims_wide %>%
     IMPACT_MEDIAN                 = IMPACT_median,
     `IMPACT_5 percentile`         = IMPACT_q5,
     `IMPACT_95 percentile`        = IMPACT_q95,
-    `ENTRY-A_MEDIAN`              = ENTRYA_median
+    `INVASION-B_MEDIAN`           = INVASIONB_median,
+    `INVASION-B_5 percentile`     = INVASIONB_q5,
+    `INVASION-B_95 percentile`    = INVASIONB_q95,
+    Total_risk_score_A            = RISKA_median,
+    Total_risk_score_B            = RISKB_median
   ) %>%
   mutate(
     Species               = paste0(scientificName, " (", eppoCode, ")"),
     use_this_species_name = scientificName,
     eppocode              = tolower(eppoCode),
-    Date                  = as.Date(substr(endDate, 1, 10)),
-    Total_risk_score      = `ENTRY-A_MEDIAN` * ESTABLISHMENT_MEDIAN * IMPACT_MEDIAN
+    Date                  = as.Date(substr(endDate, 1, 10))
   )
-
-# Drop rows where key simulation variables are missing (no simulation run)
-df <- df %>%
-  filter(!is.na(`INVASION-A_MEDIAN`), !is.na(ESTABLISHMENT_MEDIAN), !is.na(IMPACT_MEDIAN))
 
 # Keep newest entry per species when duplicates exist
 df <- df %>%
@@ -223,34 +223,37 @@ matrix_theme <- theme_minimal(base_size = 11) +
 # 6. PLOT FUNCTIONS
 # ==============================================================================
 
-plot_invasion <- function(data, title_suffix = "All Species", filename = NULL, show_legend = TRUE) {
+plot_invasion <- function(data, title_suffix = "All Species", filename = NULL, show_legend = TRUE, scenario = "A") {
   if (nrow(data) == 0) {
     cat(paste0("  Skipping (no data): ", filename, "\n"))
     return(invisible(NULL))
   }
-  if (is.null(filename)) filename <- file.path(OUTPUT_DIR, "plot_invasion_all_species.png")
-  
+  inv_med <- paste0("INVASION-", scenario, "_MEDIAN")
+  inv_lo  <- paste0("INVASION-", scenario, "_5 percentile")
+  inv_hi  <- paste0("INVASION-", scenario, "_95 percentile")
+  if (is.null(filename)) filename <- file.path(OUTPUT_DIR, paste0("plot_invasion_scen", scenario, "_all_species.png"))
+
   p <- ggplot() +
     geom_tile(data = grid,
               aes(x = `INVASION-A_MEDIAN`, y = IMPACT_MEDIAN, fill = Risk_Area), alpha = 1) +
     geom_errorbarh(data = data,
                    aes(y = IMPACT_MEDIAN,
-                       xmin = `INVASION-A_5 percentile`,
-                       xmax = `INVASION-A_95 percentile`),
+                       xmin = !!sym(inv_lo),
+                       xmax = !!sym(inv_hi)),
                    width = 0, colour = "black", alpha = 0.5, linewidth = 0.2) +
     geom_errorbar(data = data,
-                  aes(x = `INVASION-A_MEDIAN`,
+                  aes(x = !!sym(inv_med),
                       ymin = `IMPACT_5 percentile`,
                       ymax = `IMPACT_95 percentile`),
                   width = 0, colour = "black", alpha = 0.5, linewidth = 0.2) +
     geom_point(data = data,
-               aes(x = `INVASION-A_MEDIAN`, y = IMPACT_MEDIAN, shape = custom_tax),
+               aes(x = !!sym(inv_med), y = IMPACT_MEDIAN, shape = custom_tax),
                fill = "black", colour = "black", size = 3, stroke = 1.2) +
     geom_text_repel(data = data,
-                    aes(x = `INVASION-A_MEDIAN`, y = IMPACT_MEDIAN, label = eppoCode),
+                    aes(x = !!sym(inv_med), y = IMPACT_MEDIAN, label = eppoCode),
                     size = 3.5, max.overlaps = Inf, box.padding = 0.4) +
     scale_x_continuous(breaks = seq(0, 1, 0.1), limits = c(-0.05, 1),
-                       expand = c(0, 0), name = "Invasion (Median INVASION-A)") +
+                       expand = c(0, 0), name = paste0("Invasion-", scenario, " (Median)")) +
     scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(-0.05, 1),
                        expand = c(0, 0), name = "Impact (Median IMPACT)") +
     scale_fill_manual(values = risk_colors, name = "Total risk class", drop = FALSE) +
@@ -260,7 +263,7 @@ plot_invasion <- function(data, title_suffix = "All Species", filename = NULL, s
     geom_vline(xintercept = 0, color = "black", linewidth = 0.5) +
     matrix_theme +
     coord_fixed()
-  
+
   ggsave(filename, p, width = 12, height = 10, dpi = 300, device = agg_png)
   cat(paste0("  Saved: ", basename(filename), "\n"))
   invisible(p)
@@ -309,14 +312,161 @@ plot_establishment <- function(data, title_suffix = "All Species", filename = NU
   invisible(p)
 }
 
+plot_invasion_ab <- function(data, filename = NULL, show_legend = TRUE) {
+  if (nrow(data) == 0) {
+    cat(paste0("  Skipping (no data): ", filename, "\n"))
+    return(invisible(NULL))
+  }
+  if (is.null(filename)) filename <- file.path(OUTPUT_DIR, "plot_invasion_scenAB_all_species.png")
+
+  scen_colors <- c("A: no management" = "#C0392B", "B: with management" = "#2980B9")
+
+  data_long <- data %>%
+    select(eppoCode, custom_tax, IMPACT_MEDIAN,
+           `INVASION-A_MEDIAN`, `INVASION-A_5 percentile`, `INVASION-A_95 percentile`,
+           `INVASION-B_MEDIAN`, `INVASION-B_5 percentile`, `INVASION-B_95 percentile`) %>%
+    pivot_longer(
+      cols      = matches("^INVASION-[AB]_"),
+      names_to  = c("scenario", "stat"),
+      names_pattern = "INVASION-([AB])_(.*)"
+    ) %>%
+    pivot_wider(names_from = stat, values_from = value) %>%
+    rename(inv_med = MEDIAN, inv_lo = `5 percentile`, inv_hi = `95 percentile`) %>%
+    mutate(scenario = factor(scenario, levels = c("A", "B"),
+                             labels = c("A: no management", "B: with management")))
+
+  p <- ggplot() +
+    geom_tile(data = grid,
+              aes(x = `INVASION-A_MEDIAN`, y = IMPACT_MEDIAN, fill = Risk_Area), alpha = 1) +
+    geom_segment(data = data,
+                 aes(x = `INVASION-A_MEDIAN`, xend = `INVASION-B_MEDIAN`,
+                     y = IMPACT_MEDIAN, yend = IMPACT_MEDIAN),
+                 arrow = arrow(length = unit(0.15, "cm"), type = "closed"),
+                 colour = "grey20", linewidth = 0.5, alpha = 0.7) +
+    geom_errorbarh(data = data_long,
+                   aes(y = IMPACT_MEDIAN, xmin = inv_lo, xmax = inv_hi,
+                       colour = scenario),
+                   width = 0, alpha = 0.4, linewidth = 0.2) +
+    geom_point(data = data_long,
+               aes(x = inv_med, y = IMPACT_MEDIAN, shape = custom_tax, colour = scenario),
+               size = 3, stroke = 1.2) +
+    geom_text_repel(data = filter(data_long, scenario == "A: no management"),
+                    aes(x = inv_med, y = IMPACT_MEDIAN, label = eppoCode),
+                    size = 3.5, max.overlaps = Inf, box.padding = 0.4) +
+    scale_x_continuous(breaks = seq(0, 1, 0.1), limits = c(-0.05, 1),
+                       expand = c(0, 0), name = "Invasion (Median)") +
+    scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(-0.05, 1),
+                       expand = c(0, 0), name = "Impact (Median IMPACT)") +
+    scale_fill_manual(values = risk_colors, name = "Total risk class", drop = FALSE) +
+    scale_colour_manual(values = scen_colors, name = "Scenario") +
+    scale_shape_manual(values = custom_tax_shapes, name = "Group",
+                       guide = if (show_legend) "legend" else "none") +
+    geom_hline(yintercept = 0, color = "black", linewidth = 0.5) +
+    geom_vline(xintercept = 0, color = "black", linewidth = 0.5) +
+    matrix_theme +
+    coord_fixed()
+
+  ggsave(filename, p, width = 12, height = 10, dpi = 300, device = agg_png)
+  cat(paste0("  Saved: ", basename(filename), "\n"))
+  invisible(p)
+}
+
+plot_invasion_panels_ab <- function(data, filename = NULL, show_legend = TRUE) {
+  if (nrow(data) == 0) {
+    cat(paste0("  Skipping (no data): ", filename, "\n"))
+    return(invisible(NULL))
+  }
+  if (is.null(filename)) filename <- file.path(OUTPUT_DIR, "plot_invasion_panelsAB_all_species.png")
+
+  # Background grid with generic x so it works for both scenarios
+  grid_ab <- expand.grid(
+    inv_x         = seq(0, 1, length.out = 100),
+    IMPACT_MEDIAN = seq(0, 1, length.out = 100)
+  ) %>%
+    mutate(
+      prob_bin   = case_when(inv_x <= 0.33 ~ 1, inv_x <= 0.66 ~ 2, TRUE ~ 3),
+      impact_bin = case_when(IMPACT_MEDIAN <= 0.33 ~ 1, IMPACT_MEDIAN <= 0.66 ~ 2, TRUE ~ 3),
+      risk_score = prob_bin * impact_bin,
+      Risk_Area  = factor(case_when(
+        risk_score == 1         ~ "Very low risk",
+        risk_score == 2         ~ "Low risk",
+        risk_score %in% c(3,4) ~ "Moderate risk",
+        risk_score == 6         ~ "High risk",
+        risk_score == 9         ~ "Very high risk"
+      ), levels = names(risk_colors))
+    )
+
+  build_panel <- function(scenario) {
+    inv_med   <- paste0("INVASION-", scenario, "_MEDIAN")
+    inv_lo    <- paste0("INVASION-", scenario, "_5 percentile")
+    inv_hi    <- paste0("INVASION-", scenario, "_95 percentile")
+    x_label   <- if (scenario == "A") "Invasion-A: no management (Median)"
+                 else                 "Invasion-B: with management (Median)"
+
+    ggplot() +
+      geom_tile(data = grid_ab,
+                aes(x = inv_x, y = IMPACT_MEDIAN, fill = Risk_Area), alpha = 1) +
+      geom_errorbarh(data = data,
+                     aes(y = IMPACT_MEDIAN,
+                         xmin = !!sym(inv_lo),
+                         xmax = !!sym(inv_hi)),
+                     width = 0, colour = "black", alpha = 0.5, linewidth = 0.2) +
+      geom_errorbar(data = data,
+                    aes(x = !!sym(inv_med),
+                        ymin = `IMPACT_5 percentile`,
+                        ymax = `IMPACT_95 percentile`),
+                    width = 0, colour = "black", alpha = 0.5, linewidth = 0.2) +
+      geom_point(data = data,
+                 aes(x = !!sym(inv_med), y = IMPACT_MEDIAN, shape = custom_tax),
+                 fill = "black", colour = "black", size = 3, stroke = 1.2) +
+      geom_text_repel(data = data,
+                      aes(x = !!sym(inv_med), y = IMPACT_MEDIAN, label = eppoCode),
+                      size = 3.5, max.overlaps = Inf, box.padding = 0.4) +
+      scale_x_continuous(breaks = seq(0, 1, 0.1), limits = c(-0.05, 1),
+                         expand = c(0, 0), name = x_label) +
+      scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(-0.05, 1),
+                         expand = c(0, 0), name = "Impact (Median)") +
+      scale_fill_manual(values = risk_colors, name = "Total risk class", drop = FALSE) +
+      scale_shape_manual(values = custom_tax_shapes, name = "Group",
+                         guide = if (show_legend) "legend" else "none") +
+      geom_hline(yintercept = 0, color = "black", linewidth = 0.5) +
+      geom_vline(xintercept = 0, color = "black", linewidth = 0.5) +
+      matrix_theme +
+      coord_fixed()
+  }
+
+  pA <- build_panel("A")
+  pB <- build_panel("B")
+
+  combined <- pA + pB +
+    plot_layout(ncol = 2, guides = "collect") +
+    plot_annotation(tag_levels = "A",
+                    theme = theme(plot.tag = element_text(size = 16, face = "bold")))
+
+  ggsave(filename, combined, width = 22, height = 10, dpi = 300, device = agg_png)
+  cat(paste0("  Saved: ", basename(filename), "\n"))
+  invisible(combined)
+}
+
 # ==============================================================================
 # 7. GENERATE PLOTS
 # ==============================================================================
 
 cat("\n=== MAIN PLOTS ===\n")
 plot_invasion(df,
-              filename    = file.path(OUTPUT_DIR, "plot_invasion_all_species.png"),
+              filename    = file.path(OUTPUT_DIR, "plot_invasion_scenA_all_species.png"),
+              scenario    = "A",
               show_legend = TRUE)
+plot_invasion(df,
+              filename    = file.path(OUTPUT_DIR, "plot_invasion_scenB_all_species.png"),
+              scenario    = "B",
+              show_legend = TRUE)
+plot_invasion_ab(df,
+                 filename    = file.path(OUTPUT_DIR, "plot_invasion_scenAB_all_species.png"),
+                 show_legend = TRUE)
+plot_invasion_panels_ab(df,
+                        filename    = file.path(OUTPUT_DIR, "plot_invasion_panelsAB_all_species.png"),
+                        show_legend = TRUE)
 plot_establishment(df,
                    filename    = file.path(OUTPUT_DIR, "plot_establishment_all_species.png"),
                    show_legend = TRUE)
@@ -327,29 +477,30 @@ for (grp in levels(df$custom_tax)) {
   if (nrow(grp_data) == 0) next
   slug <- tolower(grp)
   plot_invasion(grp_data,
-                filename    = file.path(OUTPUT_DIR, paste0("plot_invasion_", slug, ".png")),
+                filename    = file.path(OUTPUT_DIR, paste0("plot_invasion_scenA_", slug, ".png")),
+                scenario    = "A",
                 show_legend = FALSE)
+  plot_invasion(grp_data,
+                filename    = file.path(OUTPUT_DIR, paste0("plot_invasion_scenB_", slug, ".png")),
+                scenario    = "B",
+                show_legend = FALSE)
+  plot_invasion_ab(grp_data,
+                   filename    = file.path(OUTPUT_DIR, paste0("plot_invasion_scenAB_", slug, ".png")),
+                   show_legend = FALSE)
+  plot_invasion_panels_ab(grp_data,
+                          filename    = file.path(OUTPUT_DIR, paste0("plot_invasion_panelsAB_", slug, ".png")),
+                          show_legend = FALSE)
   plot_establishment(grp_data,
                      filename    = file.path(OUTPUT_DIR, paste0("plot_establishment_", slug, ".png")),
                      show_legend = FALSE)
 }
 
-cat("\n=== LOLLIPOP: TOTAL RISK SCORE ===\n")
-lollipop_data <- df %>%
-  filter(!is.na(eppoCode), Total_risk_score > 0) %>%
-  mutate(eppoCode = forcats::fct_reorder(eppoCode, Total_risk_score, .desc = FALSE))
+cat("\n=== TOTAL RISK SCORE PLOTS ===\n")
 
-plot_total_risk_score <- ggplot(lollipop_data,
-                                aes(x = Total_risk_score, y = eppoCode, shape = custom_tax)) +
-  geom_segment(aes(x = 0, xend = Total_risk_score, y = eppoCode, yend = eppoCode),
-               color = "black", linewidth = 0.3) +
-  geom_point(fill = "black", colour = "black", size = 3, stroke = 1.2) +
-  geom_text(aes(label = use_this_species_name), hjust = -0.1, size = 4) +
-  scale_shape_manual(values = custom_tax_shapes, name = "") +
-  scale_x_continuous(breaks = seq(0, 0.5, 0.05)) +
-  expand_limits(x = c(0, 0.5)) +
-  labs(x = "Total Risk Score", y = "EPPO Code") +
-  theme_minimal(base_size = 16) +
+scen_colors_lollipop <- c("A: no management" = "#C0392B", "B: with management" = "#2980B9")
+scen_shapes_lollipop <- c("A: no management" = 16, "B: with management" = 21)
+
+lollipop_theme <- theme_minimal(base_size = 16) +
   theme(
     axis.title      = element_text(face = "bold", size = 12),
     axis.text       = element_text(size = 12, face = "bold"),
@@ -359,9 +510,86 @@ plot_total_risk_score <- ggplot(lollipop_data,
     axis.line       = element_line(color = "black", linewidth = 0.5)
   )
 
-ggsave(file.path(OUTPUT_DIR, "plot_total_risk_score.png"),
+# Single-scenario lollipop (A or B)
+plot_total_risk_single <- function(score_col, scen_label, filename,
+                                   point_color = NULL, x_label = NULL) {
+  d <- df %>%
+    filter(!is.na(eppoCode), !!sym(score_col) > 0) %>%
+    mutate(eppoCode = forcats::fct_reorder(eppoCode, !!sym(score_col), .desc = FALSE))
+
+  if (nrow(d) == 0) {
+    cat(paste0("  Skipping (no data): ", basename(filename), "\n"))
+    return(invisible(NULL))
+  }
+
+  pt_col <- if (is.null(point_color)) scen_colors_lollipop[[scen_label]] else point_color
+  x_lab  <- if (is.null(x_label)) paste0("Total Risk Score (", scen_label, ")") else x_label
+
+  p <- ggplot(d, aes(x = !!sym(score_col), y = eppoCode, shape = custom_tax)) +
+    geom_segment(aes(x = 0, xend = !!sym(score_col), y = eppoCode, yend = eppoCode),
+                 color = "black", linewidth = 0.3) +
+    geom_point(colour = pt_col, size = 3, stroke = 1.2) +
+    geom_text(aes(label = use_this_species_name), hjust = -0.1, size = 4) +
+    scale_shape_manual(values = custom_tax_shapes, name = "") +
+    scale_x_continuous(breaks = seq(0, 0.5, 0.05)) +
+    expand_limits(x = c(0, 0.5)) +
+    labs(x = x_lab, y = "EPPO Code") +
+    lollipop_theme
+
+  ggsave(filename, p, width = 30, height = 20, units = "cm", dpi = 300, device = agg_png)
+  cat(paste0("  Saved: ", basename(filename), "\n"))
+  invisible(p)
+}
+
+plot_total_risk_single("Total_risk_score_A", "A: no management",
+                       file.path(OUTPUT_DIR, "plot_total_risk_score_A.png"))
+plot_total_risk_single("Total_risk_score_B", "B: with management",
+                       file.path(OUTPUT_DIR, "plot_total_risk_score_B.png"))
+
+# Publication version: scenario B, all black, plain "Total Risk Score" axis
+plot_total_risk_single("Total_risk_score_B", "B: with management",
+                       file.path(OUTPUT_DIR, "plot_total_risk_score_B_publication.png"),
+                       point_color = "black", x_label = "Total Risk Score")
+
+# Dumbbell comparing A vs B
+lollipop_data <- df %>%
+  filter(!is.na(eppoCode), Total_risk_score_A > 0) %>%
+  mutate(eppoCode = forcats::fct_reorder(eppoCode, Total_risk_score_A, .desc = FALSE))
+
+lollipop_long <- lollipop_data %>%
+  pivot_longer(
+    c(Total_risk_score_A, Total_risk_score_B),
+    names_to  = "scenario",
+    values_to = "score"
+  ) %>%
+  mutate(scenario = factor(scenario,
+                           levels = c("Total_risk_score_A", "Total_risk_score_B"),
+                           labels = c("A: no management", "B: with management")))
+
+plot_total_risk_score <- ggplot() +
+  geom_segment(data = lollipop_data,
+               aes(x = 0, xend = Total_risk_score_A, y = eppoCode, yend = eppoCode),
+               color = "black", linewidth = 0.3) +
+  geom_segment(data = lollipop_data,
+               aes(x = Total_risk_score_B, xend = Total_risk_score_A,
+                   y = eppoCode, yend = eppoCode),
+               color = "grey50", linewidth = 0.8, alpha = 0.7) +
+  geom_point(data = lollipop_long,
+             aes(x = score, y = eppoCode, color = scenario, shape = scenario),
+             size = 3, stroke = 1.2, fill = "white") +
+  geom_text(data = lollipop_data,
+            aes(x = Total_risk_score_A, y = eppoCode, label = use_this_species_name),
+            hjust = -0.1, size = 4) +
+  scale_color_manual(values = scen_colors_lollipop, name = "Scenario") +
+  scale_shape_manual(values = scen_shapes_lollipop, name = "Scenario") +
+  scale_x_continuous(breaks = seq(0, 0.5, 0.05)) +
+  expand_limits(x = c(0, 0.5)) +
+  labs(x = "Total Risk Score", y = "EPPO Code") +
+  lollipop_theme
+
+ggsave(file.path(OUTPUT_DIR, "plot_total_risk_score_AB.png"),
        plot_total_risk_score, width = 30, height = 20, units = "cm", dpi = 300, device = agg_png)
-cat("  Saved: plot_total_risk_score.png\n")
+cat("  Saved: plot_total_risk_score_AB.png\n")
 
 # ==============================================================================
 # 8. OPTIONAL DATA EXPORT
@@ -406,11 +634,17 @@ df %>%
   mutate(pct = round(n / sum(n) * 100, 1)) %>%
   print(n = Inf)
 
-cat("\n--- Total risk score stats ---\n")
-cat("Mean:  ", round(mean(df$Total_risk_score, na.rm = TRUE), 4), "\n")
-cat("Median:", round(median(df$Total_risk_score, na.rm = TRUE), 4), "\n")
-cat("Range: ", round(min(df$Total_risk_score, na.rm = TRUE), 4), "-",
-    round(max(df$Total_risk_score, na.rm = TRUE), 4), "\n")
+cat("\n--- Total risk score stats (Scenario A) ---\n")
+cat("Mean:  ", round(mean(df$Total_risk_score_A, na.rm = TRUE), 4), "\n")
+cat("Median:", round(median(df$Total_risk_score_A, na.rm = TRUE), 4), "\n")
+cat("Range: ", round(min(df$Total_risk_score_A, na.rm = TRUE), 4), "-",
+    round(max(df$Total_risk_score_A, na.rm = TRUE), 4), "\n")
+
+cat("\n--- Total risk score stats (Scenario B) ---\n")
+cat("Mean:  ", round(mean(df$Total_risk_score_B, na.rm = TRUE), 4), "\n")
+cat("Median:", round(median(df$Total_risk_score_B, na.rm = TRUE), 4), "\n")
+cat("Range: ", round(min(df$Total_risk_score_B, na.rm = TRUE), 4), "-",
+    round(max(df$Total_risk_score_B, na.rm = TRUE), 4), "\n")
 
 cat("\nDone. Plots saved to:", OUTPUT_DIR, "\n")
 

@@ -93,3 +93,15 @@ assessment_report_*.docx
 _ul-*
 .positai
 .worktrees/
+
+# Agent tooling scratch
+.agents/
+
+# Exploration analysis outputs (large generated artifacts: traces, plots, rds)
+scripts/exploration/output/
+
+# Local scratch / working docs and downloaded reference data
+python/my-docs/
+python/prompt_inspection.md
+python/.pdf_load_log.txt
+python/customstariffstructure.xml
