@@ -29,7 +29,13 @@ SOURCE_FILES <- c(
   "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/master_database/yearly copies/master_database_2026.db"
 )
 
+# ==============================================================================
+# clean-up
+# ==============================================================================
+
 DELETE_EMPTY_ASSESSMENTS <- TRUE   # remove assessments with no content after merge
+
+REFERENCE_SPECIES <- c("ERWIAM", "AGRLAX" ) # excluded from plots
 
 # ==============================================================================
 # 1. LIBRARIES
@@ -194,6 +200,12 @@ for (src_path in SOURCE_FILES) {
   for (i in seq_len(nrow(src_pests))) {
     p    <- src_pests[i, ]
     eppo <- if (!is.na(p$eppoCode)) trimws(p$eppoCode) else ""
+
+    # ── Reference species: never imported from source (existing master copies left as-is) ──
+    if (nchar(eppo) > 0 && toupper(eppo) %in% toupper(REFERENCE_SPECIES)) {
+      cat(sprintf("  SKIP (reference species): %s (%s)\n", p$scientificName, eppo))
+      next
+    }
 
     if (nchar(eppo) == 0 || !toupper(eppo) %in% toupper(existing_eppo)) {
       # ── New pest: insert ──────────────────────────────────────────────────────

@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added - June 2026
 
+#### Deep-research routing + eppo_gd validator fix — 2026-06-16
+
+- **`populate_finnprio_justifications.py`**: five questions now use `report_type="deep"` (recursive multi-level exploration): `ENT2A`, `ENT2B`, `EST1`, `EST2`, `IMP1`. All other questions use `"research_report"`. Routing is driven by a `DEEP_RESEARCH_QUESTIONS` set; the question code is normalised (trailing dot stripped) before lookup.
+- **`eppo_gd_retriever.register()`** extended to also patch `get_all_retriever_names` (the validator), in addition to the factory. Deep research validated retrievers against a filesystem scan that missed dynamically registered retrievers, causing `eppo_gd` to be silently dropped and replaced with `tavily`. Now works in all modes.
+- **`10_populate_master_database.R`**: adds `REFERENCE_SPECIES` vector (`ERWIAM`, `AGRLAX`) — entries in this list are never imported from source databases; existing master copies are preserved as-is. Closes a gap where reference/baseline species could be overwritten by newer (but less complete) source data.
+- **`9_populate_plot.R`**: `REFERENCE_SPECIES` updated to match (`ERWIAM` replaces placeholder `XXXXX`).
+- **`8_batch_simulation.R`**: outdated commented DB paths cleaned up.
+
 #### Management-effect analysis report (`scripts/exploration/management_effect_report.Rmd`) — 2026-06-10
 
 - **New R Markdown report** analysing how risk responds to the two entry-side levers in the master database, opened **read-only**. Renders a tabbed (page-by-page) HTML over all 129 simulated assessments using the latest stored Monte-Carlo summary per assessment — observational, no re-simulation.

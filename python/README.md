@@ -73,6 +73,7 @@ Key settings are at the top of each script:
 **`populate_finnprio_justifications.py`**
 - `SKIP_EXISTING_JUSTIFICATION` — skip questions that already have a justification (default `True`)
 - `DEFAULT_DB_PATH` / `DEFAULT_OUTPUT_DIR` — fallback paths when `--db` is not passed on CLI
+- `DEEP_RESEARCH_QUESTIONS` — set of question codes that use `report_type="deep"` (recursive multi-level exploration). Currently `{"ENT2A", "ENT2B", "EST1", "EST2", "IMP1"}`. All other questions use `"research_report"`. Deep research is slower and more expensive but produces broader coverage for the highest-impact questions.
 
 **`populate_finnprio_values.py`**
 - `SKIP_EXISTING_VALUES` — skip questions that already have min/likely/max (default `True`)

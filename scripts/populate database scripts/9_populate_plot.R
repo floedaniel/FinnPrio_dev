@@ -18,7 +18,7 @@ OUTPUT_DIR <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_
 ONLY_FINISHED     <- FALSE   # TRUE = exclude unfinished assessments
 ONLY_VALID        <- FALSE   # TRUE = only valid assessments
 EXPORT_DATA       <- TRUE    # export wide data frame as Excel alongside plots
-REFERENCE_SPECIES <- c("XXXXX", "AGRLAX" ) # excluded from plots
+REFERENCE_SPECIES <- c("ERWIAM", "AGRLAX" ) # excluded from plots
 
 # ==============================================================================
 # 1. LIBRARIES

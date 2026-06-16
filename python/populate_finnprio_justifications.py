@@ -132,6 +132,10 @@ EXCLUDED_DOMAINS = [
     "wikipedia.org",
 ]
 
+# Questions that receive recursive deep research (more thorough, slower).
+# ENT2 appears in the DB as pathway questions ENT2A/ENT2B, not plain ENT2.
+DEEP_RESEARCH_QUESTIONS = {"ENT2A", "ENT2B", "EST1", "EST2", "IMP1"}
+
 # Extra domains excluded for ENT3 — alternative trade databases that
 # the AI should never cite when SSB table 08801 is the required source
 ENT3_EXCLUDED_DOMAINS = [
@@ -1044,6 +1048,11 @@ async def research_justification(pest_name: str, question_code: str, question_te
                                   exclude_domains=exclude_domains,
                                   prior_context=prior_context)
 
+    # Route to deep recursive research for high-priority questions
+    norm_q = normalize_code(question_code)
+    report_type = "deep" if norm_q in DEEP_RESEARCH_QUESTIONS else "research_report"
+    logging.info("[%s] %s: report_type=%s", pest_name, question_code, report_type)
+
     # For ENT3: switch to hybrid Tavily+MCP retriever, restore after
     original_retriever = os.environ.get("RETRIEVER", "")
     if mcp_configs:
@@ -1053,7 +1062,7 @@ async def research_justification(pest_name: str, question_code: str, question_te
     try:
         researcher_kwargs = dict(
             query=query,
-            report_type="research_report",
+            report_type=report_type,
             tone=Tone.Formal,
             report_source="web",
         )
@@ -1436,5 +1445,5 @@ if __name__ == "__main__":
         process_pathways=not args.no_pathways,
         skip_existing=skip_existing,
         eppo_codes=args.eppo_codes,
-        question_filter=args.question
+        question_filter=args.question,
     ))
