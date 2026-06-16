@@ -1055,9 +1055,15 @@ async def research_justification(pest_name: str, question_code: str, question_te
 
     # For ENT3: switch to hybrid Tavily+MCP retriever, restore after
     original_retriever = os.environ.get("RETRIEVER", "")
+    original_curate = os.environ.get("CURATE_SOURCES", "")
     if mcp_configs:
         os.environ["RETRIEVER"] = "tavily,mcp"
         os.environ["MCP_AUTO_TOOL_SELECTION"] = "true"
+    if report_type == "deep":
+        # curator.py calls json.loads() on the SMART_LLM response; gpt-4.1 wraps
+        # its reply in markdown fences when the source list is large, causing a
+        # guaranteed parse failure and a wasted LLM call. Disable for deep mode.
+        os.environ["CURATE_SOURCES"] = "false"
 
     try:
         researcher_kwargs = dict(
@@ -1098,6 +1104,8 @@ async def research_justification(pest_name: str, question_code: str, question_te
         if mcp_configs:
             os.environ["RETRIEVER"] = original_retriever
             os.environ.pop("MCP_AUTO_TOOL_SELECTION", None)
+        if report_type == "deep":
+            os.environ["CURATE_SOURCES"] = original_curate
 
 # =============================================================================
 # MAIN WORKFLOW
