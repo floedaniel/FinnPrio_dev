@@ -7,6 +7,16 @@ All notable changes to the Python AI enhancement scripts.
 
 ---
 
+## [2026-06-18] - Model upgrade: gpt-5.x series for justifications script
+
+### Changed
+
+- **`FAST_LLM`** upgraded from `openai:gpt-4o-mini` to `openai:gpt-5.4-mini` in `populate_finnprio_justifications.py` — used for quick tasks (summarization, sub-queries).
+- **`SMART_LLM`** upgraded from `openai:gpt-4.1` to `openai:gpt-5.4` — used for complex reasoning and report writing (long response support).
+- **`STRATEGIC_LLM`** upgraded from `openai:o3` to `openai:gpt-5.5` — used for planning (agent/query selection).
+
+---
+
 ## [2026-06-16] - Deep research routing + eppo_gd validator fix
 
 ### Added

@@ -100,9 +100,9 @@ os.environ['NCBI_API_KEY']   = load_api_key(NCBI_API_KEY_FILE)
 # - Ref: https://docs.gptr.dev/docs/gpt-researcher/gptr/config
 os.environ.update({
     # LLM roles
-    "FAST_LLM": "openai:gpt-4.1-mini",   # Quick tasks: summarization, sub-queries
-    "SMART_LLM": "openai:gpt-4.1",      # Complex reasoning: report writing (long response support)
-    "STRATEGIC_LLM": "openai:o3",  # Planning: agent/query selection
+    "FAST_LLM": "openai:gpt-5.4-mini",   # Quick tasks: summarization, sub-queries
+    "SMART_LLM": "openai:gpt-5.4",      # Complex reasoning: report writing (long response support)
+    "STRATEGIC_LLM": "openai:gpt-5.5",  # Planning: agent/query selection
 
     "TEMPERATURE": "0.1",
     "REASONING_EFFORT": "medium",

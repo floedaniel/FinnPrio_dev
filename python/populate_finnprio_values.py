@@ -57,6 +57,12 @@ def load_api_key(file_path: str) -> str:
 os.environ['OPENAI_API_KEY'] = load_api_key(OPENAI_API_KEY_FILE)
 os.environ['TAVILY_API_KEY'] = load_api_key(TAVILY_API_KEY_FILE)
 
+# LLM Model Configuration
+# LLM_MODEL:      used for PERT min/likely/max selection (precision task)
+# LLM_MODEL_FAST: used for boolean yes/no classification (simpler task)
+os.environ.setdefault("LLM_MODEL",      "gpt-5.4")
+os.environ.setdefault("LLM_MODEL_FAST", "gpt-5.4-mini")
+
 # Database Path - CHOOSE ONE OPTION:
 #
 # OPTION 1: Manual path (uncomment and edit the line below)
@@ -325,13 +331,13 @@ class ValuePopulator:
 
         try:
             response = await client.chat.completions.create(
-                model=os.getenv("LLM_MODEL", "gpt-4o"),
+                model=os.getenv("LLM_MODEL_FAST", "gpt-5.4-mini"),
                 messages=[
                     {"role": "system", "content": "You are an expert in plant pest risk assessment."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.0,
-                max_tokens=20
+                max_completion_tokens=20
             )
             content = response.choices[0].message.content.strip()
             if "```" in content:
@@ -351,13 +357,13 @@ class ValuePopulator:
 
         try:
             response = await client.chat.completions.create(
-                model=os.getenv("LLM_MODEL", "gpt-4o"),
+                model=os.getenv("LLM_MODEL", "gpt-5.4"),
                 messages=[
                     {"role": "system", "content": "You are an expert in plant pest risk assessment. You analyze scientific evidence and determine appropriate risk estimates."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=float(os.getenv("TEMPERATURE", "0.1")),
-                max_tokens=int(os.getenv("LLM_MAX_TOKENS", "500"))
+                max_completion_tokens=int(os.getenv("LLM_MAX_TOKENS", "500"))
             )
 
             content = response.choices[0].message.content.strip()
@@ -837,6 +843,8 @@ class ValuePopulator:
         print("=" * 80)
         print(f"\nDatabase: {self.db_path}")
         print(f"Skip existing values: {skip_existing}")
+        print(f"Model (PERT):    {os.getenv('LLM_MODEL')}")
+        print(f"Model (boolean): {os.getenv('LLM_MODEL_FAST')}")
         print()
 
         self.connect()
