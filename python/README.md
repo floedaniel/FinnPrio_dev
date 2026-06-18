@@ -11,7 +11,7 @@ Python scripts for automatically generating scientific justifications and min/li
 
 ```
 SOURCE DATABASE  →  populate_finnprio_justifications.py  →  populate_finnprio_values.py  →  COMPLETE DATABASE
-                     (GPT Researcher, ~$0.10-0.50/question)  (GPT-4.1, ~$0.01/question)
+                     (GPT Researcher, ~$0.10-0.50/question)  (gpt-5.4, ~$0.01/question)
 ```
 
 Always run the justifications script **before** the values script.
@@ -77,7 +77,8 @@ Key settings are at the top of each script:
 
 **`populate_finnprio_values.py`**
 - `SKIP_EXISTING_VALUES` — skip questions that already have min/likely/max (default `True`)
-- Model: `gpt-4o` (overridable via `LLM_MODEL` env var)
+- `LLM_MODEL`: PERT min/likely/max selection — default `gpt-5.4` (overridable via env var)
+- `LLM_MODEL_FAST`: boolean yes/no classification — default `gpt-5.4-mini` (overridable via env var)
 - DAG enforcement runs automatically — no configuration needed
 
 **API keys** are read from text files. Paths are set near the top of each script. Default locations:

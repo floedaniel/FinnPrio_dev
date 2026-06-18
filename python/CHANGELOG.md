@@ -7,13 +7,20 @@ All notable changes to the Python AI enhancement scripts.
 
 ---
 
-## [2026-06-18] - Model upgrade: gpt-5.x series for justifications script
+## [2026-06-18] - Model upgrade: gpt-5.x series across both scripts
 
 ### Changed
 
-- **`FAST_LLM`** upgraded from `openai:gpt-4o-mini` to `openai:gpt-5.4-mini` in `populate_finnprio_justifications.py` — used for quick tasks (summarization, sub-queries).
-- **`SMART_LLM`** upgraded from `openai:gpt-4.1` to `openai:gpt-5.4` — used for complex reasoning and report writing (long response support).
-- **`STRATEGIC_LLM`** upgraded from `openai:o3` to `openai:gpt-5.5` — used for planning (agent/query selection).
+**`populate_finnprio_justifications.py`**
+- **`FAST_LLM`** upgraded from `openai:gpt-4o-mini` to `openai:gpt-5.4-mini` — quick tasks (summarization, sub-queries).
+- **`SMART_LLM`** upgraded from `openai:gpt-4.1` to `openai:gpt-5.4` — complex reasoning and report writing.
+- **`STRATEGIC_LLM`** upgraded from `openai:o3` to `openai:gpt-5.5` — planning (agent/query selection).
+
+**`populate_finnprio_values.py`**
+- **`LLM_MODEL`** and **`LLM_MODEL_FAST`** added to the configuration section via `os.environ.setdefault()` — defaults to `gpt-5.4` (PERT scoring) and `gpt-5.4-mini` (boolean classification) respectively; overridable via environment variable.
+- **`_call_gpt_for_values`**: model fallback updated from `gpt-4o` to `gpt-5.4`; `max_tokens` replaced with `max_completion_tokens` (required by gpt-5.x).
+- **`_call_gpt_boolean`**: switched from `LLM_MODEL` to `LLM_MODEL_FAST`; `max_tokens` replaced with `max_completion_tokens`.
+- **`populate_values`**: prints active `LLM_MODEL` and `LLM_MODEL_FAST` on startup.
 
 ---
 
