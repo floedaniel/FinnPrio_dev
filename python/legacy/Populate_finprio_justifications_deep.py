@@ -84,12 +84,12 @@ os.environ.update({
     "FAST_TOKEN_LIMIT": "3000",          # [DEFAULT]
     "SMART_TOKEN_LIMIT": "6000",         # [DEFAULT]
     "STRATEGIC_TOKEN_LIMIT": "4000",     # [DEFAULT]
-    "TOTAL_WORDS": "2000",               # Default: 1200
+    "TOTAL_WORDS": "1500",               # Default: 1200
 
     "MAX_SEARCH_RESULTS_PER_QUERY": "8", # Default: 5 — more sources per query. Higher also gives more noise
     "MAX_ITERATIONS": "5",               # [DEFAULT]
     "REASONING_EFFORT": "high",          # [DEFAULT] o-series reasoning level for STRATEGIC_LLM
-    #"CURATE_SOURCES": "true",           # Default: false — filter irrelevant sources before writing - buggy "ERROR: 'list' object has no attribute 'split'"
+    "CURATE_SOURCES": "true",            # Default: false — filter irrelevant sources before writing (fixed in v3.5.1)
 
     # Deep Research configuration (see https://docs.gptr.dev/docs/gpt-researcher/gptr/deep_research)
     # Breadth   : parallel search queries generated per level (exploring different aspects).
