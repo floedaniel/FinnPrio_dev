@@ -118,7 +118,7 @@ os.environ.update({
 
     # Research depth
     "MAX_SEARCH_RESULTS_PER_QUERY": "100",
-    "TOTAL_WORDS": "1200",
+    "TOTAL_WORDS": "1000",
 
     # Output: APA for scientific traceability, curate sources for quality
     "REPORT_FORMAT": "apa",
@@ -959,7 +959,7 @@ ANSWERING RULES:
 
 _SOURCES = """\
 SOURCES:
-- Peer-reviewed literature and official risk assessments (EPPO, EFSA, CABI, USDA, VKM, Fera, and others)
+- Peer-reviewed literature and official risk assessments (EPPO, EFSA, CABI, USDA, VKM, SLU, Ruokavirasto, Fera, and others)
 - Trade and production data: SSB (Statistics Norway), NIBIO Totalkalkylen, and Eurostat where relevant
 - Acknowledge uncertainty when evidence is limited; keep the response focused and concise (300–400 words)"""
 
