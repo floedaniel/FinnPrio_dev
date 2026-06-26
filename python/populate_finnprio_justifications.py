@@ -1402,19 +1402,19 @@ async def main(source_db: str = DEFAULT_DB_PATH,
     print(f"\n✅ Working with: {working_db}")
     print(f"✅ Complete structure preserved")
 
-    context_store = None
-    if SAVE_CONTEXTS:
-        base_name = Path(working_db).stem.split('_v')[0]
-        contexts_db_path = Path(working_db).parent / f"{base_name}_contexts.db"
-        context_store = ContextStore(contexts_db_path)
-        print(f"💾 Context store: {contexts_db_path}")
-
     # Confirm (skip if filtering to single question or limited questions)
     if not effective_question_filter and (limit_questions is None or limit_questions > 5):
         response = input("\nThis will make many API calls. Continue? (yes/no): ")
         if response.lower() not in ['yes', 'y']:
             print("Cancelled.")
             return
+
+    context_store = None
+    if SAVE_CONTEXTS:
+        base_name = Path(working_db).stem.split('_v')[0]
+        contexts_db_path = Path(working_db).parent / f"{base_name}_contexts.db"
+        context_store = ContextStore(contexts_db_path)
+        print(f"💾 Context store: {contexts_db_path}")
 
     # Process
     print("\n" + "=" * 80)
@@ -1447,6 +1447,8 @@ async def main(source_db: str = DEFAULT_DB_PATH,
             )
     finally:
         os.environ.pop("EPPO_CODE", None)
+        if context_store is not None:
+            context_store.close()
 
     print("\n" + "=" * 80)
     print("✅ COMPLETED")
