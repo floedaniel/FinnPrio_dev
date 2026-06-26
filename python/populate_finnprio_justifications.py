@@ -66,7 +66,7 @@ DEFAULT_OUTPUT_DIR = r"C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/F
 
 # Filter by EPPO codes (empty list = process all species)
 # Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
-EPPOCODES_TO_POPULATE = [ ]
+EPPOCODES_TO_POPULATE = [ "DENCPO"]
 
 # Filter by question codes (empty list = process all questions)
 # Example: QUESTION_FILTER = ["EST2"]  # Only process EST2
@@ -1411,8 +1411,7 @@ async def main(source_db: str = DEFAULT_DB_PATH,
 
     context_store = None
     if SAVE_CONTEXTS:
-        base_name = Path(working_db).stem.split('_v')[0]
-        contexts_db_path = Path(working_db).parent / f"{base_name}_contexts.db"
+        contexts_db_path = Path(working_db).parent / f"{Path(working_db).stem}_contexts.db"
         context_store = ContextStore(contexts_db_path)
         print(f"💾 Context store: {contexts_db_path}")
 
