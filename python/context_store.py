@@ -92,6 +92,8 @@ class ContextStore:
             context_id = cursor.lastrowid
 
             chunks = record.get('context') or []
+            if isinstance(chunks, str):
+                chunks = [chunks] if chunks else []
             if chunks:
                 conn.executemany("""
                     INSERT INTO context_chunks (context_id, chunk_index, chunk_text)
