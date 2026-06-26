@@ -31,6 +31,8 @@ from typing import Dict, List
 import re
 from collections import deque
 
+from context_store import ContextStore
+
 # Import instructions loader (auto-generates JSON from Rmd if needed)
 from instructions_loader import build_justification_prompt
 
@@ -72,6 +74,9 @@ EPPOCODES_TO_POPULATE = [ ]
 # Pathway questions: "ENT2A", "ENT2B", "ENT3", "ENT4"
 QUESTION_FILTER = [ ] # Full-pipeline run: process every question (IMP2.x + IMP4.x pipeline now validated)
 # "IMP2.1", "IMP2.2", "IMP2.3"
+
+# Save GPT Researcher context + sources to sidecar DB for auditability / FactChecker
+SAVE_CONTEXTS = True
 # =============================================================================
 # API Keys - Read from files
 OPENAI_API_KEY_FILE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\API keys\tore_vkm_openai.txt"
@@ -102,7 +107,7 @@ os.environ.update({
     # LLM roles
     "FAST_LLM": "openai:gpt-5.4-mini",   # Quick tasks: summarization, sub-queries
     "SMART_LLM": "openai:gpt-5.4",      # Complex reasoning: report writing (long response support)
-    "STRATEGIC_LLM": "openai:gpt-5.5",  # Planning: agent/query selection
+    "STRATEGIC_LLM": "openai:gpt-5.4",  # Planning: agent/query selection
 
     "TEMPERATURE": "0.1",
     "REASONING_EFFORT": "medium",
@@ -1023,7 +1028,11 @@ async def research_justification(pest_name: str, question_code: str, question_te
                                  exclude_domains: List[str] = None,
                                  hosts: str = None,
                                  prior_context: str = "",
-                                 mcp_configs: list = None) -> str:
+                                 mcp_configs: list = None,
+                                 source_db: str = None,
+                                 assessment_id: int = None,
+                                 eppo_code: str = None,
+                                 context_store=None) -> str:
     """Research a single justification using GPT Researcher."""
 
     pathway_text = f" (Pathway: {pathway_name})" if pathway_name else ""
@@ -1079,6 +1088,26 @@ async def research_justification(pest_name: str, question_code: str, question_te
         researcher = GPTResearcher(**researcher_kwargs)
 
         await researcher.conduct_research()
+
+        if context_store is not None:
+            try:
+                context_store.save({
+                    "source_db":        source_db or "",
+                    "assessment_id":    assessment_id,
+                    "eppo_code":        eppo_code or "",
+                    "question_code":    question_code,
+                    "pathway_name":     pathway_name or "",
+                    "context":          researcher.context,
+                    "research_sources": researcher.research_sources,
+                    "visited_urls":     list(researcher.visited_urls),
+                    "research_costs":   researcher.research_costs,
+                    "step_costs":       researcher.step_costs,
+                })
+                print(f"💾 Context saved ({len(researcher.context)} chunks, "
+                      f"{len(researcher.research_sources)} sources)")
+            except Exception as cs_err:
+                print(f"⚠️  Context save failed (pipeline continues): {cs_err}")
+
         report = await researcher.write_report()
 
         if mcp_configs:
@@ -1098,8 +1127,8 @@ async def research_justification(pest_name: str, question_code: str, question_te
         if mcp_configs:
             logging.warning("MCP research failed for %s %s: %s",
                             pest_name, question_code, e)
-        print(f"ERROR: {str(e)}")
-        return f"ERROR: {str(e)}"
+        print(f"❌ Research failed: {str(e)}")
+        return None
     finally:
         if mcp_configs:
             os.environ["RETRIEVER"] = original_retriever
@@ -1116,7 +1145,8 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                              limit_questions: int = None,
                              process_pathways: bool = True,
                              skip_existing: bool = True,
-                             question_filter: List[str] = None):
+                             question_filter: List[str] = None,
+                             context_store=None):
     """Process assessment: regular questions + pathway questions."""
 
     print("\n📚 Loading assessment data...")
@@ -1195,11 +1225,17 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                 hosts=hosts,
                 prior_context=prior_context,
                 mcp_configs=q_mcp_configs,
+                source_db=Path(db_path).name,
+                assessment_id=assessment_id,
+                eppo_code=eppo_code,
+                context_store=context_store,
             )
 
-            update_answer_justification(db_path, answer['idAnswer'], ai_text)
-
-            print(f"✅ Updated ({len(ai_text)} chars)")
+            if ai_text is not None:
+                update_answer_justification(db_path, answer['idAnswer'], ai_text)
+                print(f"✅ Updated ({len(ai_text)} chars)")
+            else:
+                print(f"⏭️  Skipped DB write (blank — will retry on next run)")
         except Exception as e:
             print(f"❌ Error: {str(e)}")
 
@@ -1282,13 +1318,19 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                             hosts=hosts,
                             prior_context=prior_context,
                             mcp_configs=pq_mcp_configs,
+                            source_db=Path(db_path).name,
+                            assessment_id=assessment_id,
+                            eppo_code=eppo_code,
+                            context_store=context_store,
                         )
 
-                        update_pathway_justification(
-                            db_path, id_entry_pathway,
-                            pq['idPathQuestion'], ai_text)
-
-                        print(f"✅ Updated ({len(ai_text)} chars)")
+                        if ai_text is not None:
+                            update_pathway_justification(
+                                db_path, id_entry_pathway,
+                                pq['idPathQuestion'], ai_text)
+                            print(f"✅ Updated ({len(ai_text)} chars)")
+                        else:
+                            print(f"⏭️  Skipped DB write (blank — will retry on next run)")
                     except Exception as e:
                         print(f"❌ Error: {str(e)}")
         else:
@@ -1360,6 +1402,13 @@ async def main(source_db: str = DEFAULT_DB_PATH,
     print(f"\n✅ Working with: {working_db}")
     print(f"✅ Complete structure preserved")
 
+    context_store = None
+    if SAVE_CONTEXTS:
+        base_name = Path(working_db).stem.split('_v')[0]
+        contexts_db_path = Path(working_db).parent / f"{base_name}_contexts.db"
+        context_store = ContextStore(contexts_db_path)
+        print(f"💾 Context store: {contexts_db_path}")
+
     # Confirm (skip if filtering to single question or limited questions)
     if not effective_question_filter and (limit_questions is None or limit_questions > 5):
         response = input("\nThis will make many API calls. Continue? (yes/no): ")
@@ -1393,7 +1442,8 @@ async def main(source_db: str = DEFAULT_DB_PATH,
                 limit_questions=limit_questions,
                 process_pathways=process_pathways,
                 skip_existing=skip_existing,
-                question_filter=effective_question_filter
+                question_filter=effective_question_filter,
+                context_store=context_store,
             )
     finally:
         os.environ.pop("EPPO_CODE", None)
