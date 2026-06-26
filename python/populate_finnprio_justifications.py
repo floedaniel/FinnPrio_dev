@@ -59,14 +59,14 @@ SKIP_EXISTING_JUSTIFICATION = False # True
 
 # DATABASE PATH - UPDATE THIS IF YOU ADDED PATHWAYS
 # CURRENT SETTING: Using AI-enhanced database (with existing justifications)
-DEFAULT_DB_PATH = r"C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/test databases/ai_test_db/ai_test.db"
+DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\Manuscript\analysis\databases\0_raw\raw_data.db"
 
 # Output directory (new copy will be created here)
-DEFAULT_OUTPUT_DIR = r"C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/test databases/ai_test_db"
+DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\Manuscript\analysis\databases\1_rep"
 
 # Filter by EPPO codes (empty list = process all species)
 # Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
-EPPOCODES_TO_POPULATE = [ "DENCPO"]
+EPPOCODES_TO_POPULATE = [ ]
 
 # Filter by question codes (empty list = process all questions)
 # Example: QUESTION_FILTER = ["EST2"]  # Only process EST2
@@ -118,7 +118,7 @@ os.environ.update({
 
     # Retrievers — scientific sources first, Tavily as broad fallback
     # (names verified in gpt_researcher/actions/retriever.py)
-    "RETRIEVER": "tavily, semantic_scholar,pubmed_central,eppo_gd",
+    "RETRIEVER": "tavily, semantic_scholar, pubmed_central, eppo_gd",
     "SCRAPER": "bs",
 
     # Research depth
@@ -140,6 +140,11 @@ EXCLUDED_DOMAINS = [
 # Questions that receive recursive deep research (more thorough, slower).
 # ENT2 appears in the DB as pathway questions ENT2A/ENT2B, not plain ENT2.
 DEEP_RESEARCH_QUESTIONS = {"ENT2A", "ENT2B", "EST1", "EST2", "IMP1"}
+
+# Questions where Norwegian plant health regulations are directly relevant.
+# A lovdata.no search hint is appended to the query for these questions so
+# Tavily includes regulatory sources alongside scientific literature.
+LOVDATA_QUESTIONS = {"ENT2A", "ENT2B", "MAN1", "MAN2", "MAN3", "MAN4", "MAN5"}
 
 # Extra domains excluded for ENT3 — alternative trade databases that
 # the AI should never cite when SSB table 08801 is the required source
@@ -1017,6 +1022,14 @@ def create_research_query(pest_name: str, question_code: str, question_text: str
     if prior_context:
         parts.append(prior_context)
     parts.extend([question_block, _ANSWERING_RULES, _SOURCES, _FORMAT_RULES])
+
+    if normalize_code(question_code) in LOVDATA_QUESTIONS:
+        parts.append(
+            "REGULATORY CONTEXT: Also consult Norwegian plant health regulations "
+            "(Forskrift om planter og tiltak mot planteskadegjørere, "
+            "FOR-2000-12-01-1333) available at lovdata.no for current Norwegian "
+            "legal requirements relevant to this question."
+        )
 
     if exclude_domains:
         parts.append(f"EXCLUDED DOMAINS: {', '.join(exclude_domains)}")
