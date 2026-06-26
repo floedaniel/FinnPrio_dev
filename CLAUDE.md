@@ -363,6 +363,7 @@ Python scripts for automatically generating justifications and populating min/li
 - `populate_finnprio_values.py`: Determines min/likely/max values from justifications (with DAG enforcement via `dag_values.py`)
 - `dag_values.py`: DAG enforcement layer — zero-forcing (EST1/EST2→IMP, ENT2A→ENT3), ENT2B≤ENT2A clamp, topological sort, JSONL audit trail. Stateless; imported by `populate_finnprio_values.py`
 - `dag_config.py`: Question dependency graph and sibling constraints (shared by justifications and values scripts)
+- `context_store.py`: SQLite sidecar module — persists GPT Researcher context chunks, source URLs, and cost metadata after each `conduct_research()` call. Used by `populate_finnprio_justifications.py` (controlled by `SAVE_CONTEXTS` flag). Future surface area for FactChecker via `load_context()` / `query_sources()` stubs.
 - `view_justifications.py`: Utility to view generated justifications
 
 **Standalone SSB utility:**

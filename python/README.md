@@ -28,6 +28,7 @@ Always run the justifications script **before** the values script.
 | `dag_config.py` | Question dependency graph and sibling constraints (shared by both scripts) |
 | `eppo_gd_retriever.py` | GPT Researcher retriever — scrapes EPPO Global Database (Reporting + PRA) per species |
 | `standalone_ssb_MPC.py` | CLI tool for ad-hoc SSB Statistics Norway trade queries |
+| `context_store.py` | SQLite sidecar module — saves GPT Researcher context, sources and cost metadata after each research call |
 | `view_justifications.py` | Inspect generated justifications in the DB |
 | `servers/eppo_mcp_server.py` | MCP server for EPPO Global Database API |
 
@@ -72,6 +73,7 @@ Key settings are at the top of each script:
 
 **`populate_finnprio_justifications.py`**
 - `SKIP_EXISTING_JUSTIFICATION` — skip questions that already have a justification (default `True`)
+- `SAVE_CONTEXTS` — save GPT Researcher artifacts (context text, source URLs, costs) to a sidecar SQLite DB after each research call (default `True`). Sidecar is named `{working_db_stem}_contexts.db` in the same output directory.
 - `DEFAULT_DB_PATH` / `DEFAULT_OUTPUT_DIR` — fallback paths when `--db` is not passed on CLI
 - `DEEP_RESEARCH_QUESTIONS` — set of question codes that use `report_type="deep"` (recursive multi-level exploration). Currently `{"ENT2A", "ENT2B", "EST1", "EST2", "IMP1"}`. All other questions use `"research_report"`. Deep research is slower and more expensive but produces broader coverage for the highest-impact questions.
 
@@ -108,7 +110,8 @@ python parse_rmd_instructions.py --force
 
 ## Output
 
-- **Justifications script** creates a timestamped database copy: `source_ai_enhanced_DD_MM_YYYY.db`
+- **Justifications script** creates a timestamped database copy: `source_vNNN_<timestamp>.db`
+- **Context sidecar** created alongside the working DB: `source_vNNN_<timestamp>_contexts.db` — SQLite with `contexts`, `context_chunks`, and `research_sources` tables. One row per question researched; accumulates within a run.
 - **Values script** updates the database in place (no new file)
 - **DAG audit log** written alongside the database: `dag_corrections_<db_stem>.jsonl` — one line per parameter per correction event (zero-forcing and sibling clamps). Used to measure AI model reliability.
 

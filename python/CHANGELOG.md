@@ -7,6 +7,21 @@ All notable changes to the Python AI enhancement scripts.
 
 ---
 
+## [2026-06-26] - Context store sidecar + pipeline fixes
+
+### Added
+
+- **`context_store.py`** — new standalone module exposing `ContextStore`. After each `conduct_research()` call, saves GPT Researcher artifacts to a versioned SQLite sidecar (`{working_db_stem}_contexts.db`) in the same output directory. Three tables: `contexts` (one row per question, with cost metadata), `context_chunks` (the full processed text that fed the LLM), `research_sources` (URLs of searched pages). Designed for auditability and future FactChecker use.
+- **`SAVE_CONTEXTS = True`** config flag in `populate_finnprio_justifications.py` — set to `False` to disable sidecar writing.
+
+### Fixed
+
+- **Research failures now leave blank DB entries** instead of writing `"ERROR: ..."` strings. Blank entries are retried on next run when `SKIP_EXISTING_JUSTIFICATION = True`.
+- **Context store normalises `researcher.context` string → list** before chunking. In gpt-researcher v0.15.1, `conduct_research()` returns a joined string (not a list), which previously caused 8000+ single-character rows; now stored as one chunk.
+- **`contexts.db` versioned** alongside the working DB (`{stem}_contexts.db`) so each run produces a distinct sidecar rather than overwriting a shared one.
+
+---
+
 ## [2026-06-18] - Model upgrade: gpt-5.x series across both scripts
 
 ### Changed
