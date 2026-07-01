@@ -77,7 +77,7 @@ EPPOCODES_TO_POPULATE = [ "DENCPO" ]
 # Example: QUESTION_FILTER = ["EST2"]  # Only process EST2
 # Multiple: QUESTION_FILTER = ["IMP4.1", "IMP4.2", "IMP4.3"]
 # Pathway questions: "ENT2A", "ENT2B", "ENT3", "ENT4"
-QUESTION_FILTER = [ ] # Full-pipeline run: process every question (IMP2.x + IMP4.x pipeline now validated)
+QUESTION_FILTER = ["EST1", "EST2", "IMP1"] # Full-pipeline run: process every question (IMP2.x + IMP4.x pipeline now validated)
 # "IMP2.1", "IMP2.2", "IMP2.3"
 # =============================================================================
 # API Keys - Read from files
@@ -118,13 +118,19 @@ os.environ.update({
     "EMBEDDING": "openai:text-embedding-3-small",
     "SIMILARITY_THRESHOLD": "0.42",
 
-    # Retrievers — scientific sources first, Tavily as broad fallback
-    # (names verified in gpt_researcher/actions/retriever.py)
-    "RETRIEVER": "tavily, semantic_scholar,pubmed_central,eppo_gd",
+    # Retrievers — Tavily (broad) + EPPO Global Database (pest-specific).
+    # semantic_scholar and pubmed_central were dropped: they receive the full
+    # custom_report query as the search term and reject it (PubMed 414 URI Too
+    # Long; Semantic Scholar 429), adding latency and noise for no results.
+    # MCP questions temporarily switch RETRIEVER to "tavily,mcp" in research_justification.
+    "RETRIEVER": "tavily,eppo_gd",
     "SCRAPER": "bs",
 
-    # Research depth
-    "MAX_SEARCH_RESULTS_PER_QUERY": "100",
+    # Research depth. MAX_SEARCH_RESULTS_PER_QUERY (results fetched/ranked) is kept
+    # in line with MAX_URLS_TO_SCRAPE (results actually scraped) so we don't fetch
+    # far more than we use. gpt-researcher defaults are 5 / 10.
+    "MAX_SEARCH_RESULTS_PER_QUERY": "12",
+    "MAX_URLS_TO_SCRAPE": "12",
     "TOTAL_WORDS": "1000",
 
     # Output: APA for scientific traceability, curate sources for quality
