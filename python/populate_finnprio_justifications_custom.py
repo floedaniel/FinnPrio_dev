@@ -71,7 +71,7 @@ DEFAULT_OUTPUT_DIR = r"C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/F
 
 # Filter by EPPO codes (empty list = process all species)
 # Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
-EPPOCODES_TO_POPULATE = [ ]
+EPPOCODES_TO_POPULATE = [ "DENCPO" ]
 
 # Filter by question codes (empty list = process all questions)
 # Example: QUESTION_FILTER = ["EST2"]  # Only process EST2
@@ -294,11 +294,13 @@ def get_assessment_info(db_path: str, assessment_id: int) -> Dict:
     answers = []
     for row in cursor.fetchall():
         id_answer, id_question, grp, num, subgrp, text, info, justification = row
-        # TODO: trailing-dot convention diverges from populate_finnprio_values.py
-        # (which uses `f"{group}{number}"` with no trailing dot). Both currently work
-        # because instructions_loader.py strips trailing dots via rstrip('.') when
-        # resolving lookups, but the two scripts should agree on one form.
-        code = f"{grp}{num}.{subgrp}" if subgrp else f"{grp}{num}."
+        # Canonical code = group + number (e.g. ENT1, IMP2.1, MAN5). This matches
+        # the module filenames and the DAG keys. The `subgrp` column is a category
+        # label (MAN → Preventability/Controllability), NOT part of the code —
+        # appending it produced e.g. "MAN5.Controllability", which normalize_code
+        # turned into "MAN5.CONTROLLABILITY" and broke both load_module (no
+        # MAN5.CONTROLLABILITY.md) and DAG lookups (key is "MAN5").
+        code = f"{grp}{num}"
         answers.append({
             'idAnswer': id_answer,
             'code': code,
@@ -876,6 +878,16 @@ FORMAT:
 - End with the recommended option
 - Write in clear paragraphs under each heading"""
 
+# custom_report uses this query verbatim as the report-writing prompt, so GPT
+# Researcher's built-in citation/reference instructions do NOT apply — they must
+# be stated here explicitly or the report comes back with no references.
+_REFERENCE_RULES = """\
+REFERENCES:
+- Cite sources inline where claims are made (author or organisation and year where available).
+- End the report with a "References" section listing every source you actually used.
+- Give each reference's full source URL exactly as retrieved — complete and raw. Do NOT shorten, trim, truncate, rewrite, or omit any URL, and do not wrap URLs in markdown link syntax.
+- List one entry per source; do not duplicate sources."""
+
 # =============================================================================
 # GPT RESEARCHER FUNCTIONS
 # =============================================================================
@@ -887,9 +899,9 @@ def create_research_query(pest_name: str, question_code: str,
     """Build the custom_report query.
 
     Layout: header -> prior DAG context -> verbatim question module -> answering
-    rules -> sources -> format rules -> excluded domains. The module text (from
-    finnprio_question_modules/) is used verbatim; custom_report uses this query
-    as the report-writing instruction.
+    rules -> sources -> format rules -> reference rules -> excluded domains. The
+    module text (from finnprio_question_modules/) is used verbatim; custom_report
+    uses this query as the report-writing instruction.
     """
     module_text = load_module(question_code)
 
@@ -907,7 +919,7 @@ def create_research_query(pest_name: str, question_code: str,
     if prior_context:
         parts.append(prior_context)
     parts.append(module_text)
-    parts.extend([_ANSWERING_RULES, _SOURCES, _FORMAT_RULES])
+    parts.extend([_ANSWERING_RULES, _SOURCES, _FORMAT_RULES, _REFERENCE_RULES])
 
     if exclude_domains:
         parts.append(f"EXCLUDED DOMAINS: {', '.join(exclude_domains)}")
