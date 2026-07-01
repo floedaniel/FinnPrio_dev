@@ -30,10 +30,19 @@ from typing import Dict, List
 import re
 from collections import deque
 
+# Ensure UTF-8 console output. Windows defaults stdout to a legacy code page
+# (cp1252) whenever it is not a UTF-8 console (e.g. a redirected pipe), which
+# raises UnicodeEncodeError on the first emoji print. Reconfigure defensively.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
+
 # DAG configuration: question dependencies and sibling constraints
 from dag_config import QUESTION_DEPENDENCIES, PATHWAY_DEPENDENCIES, SIBLING_CONSTRAINTS
 
-from module_loader import load_module, strip_light
+from module_loader import load_module, strip_light, normalize_code
 
 
 class MissingDependencyError(Exception):
@@ -91,7 +100,7 @@ os.environ['TAVILY_API_KEY'] = load_api_key(TAVILY_API_KEY_FILE)
 os.environ['NCBI_API_KEY']   = load_api_key(NCBI_API_KEY_FILE)
 # =============================================================================
 
-# GPT Researcher Configuration (for report_type="research_report")
+# GPT Researcher Configuration (research phase; all questions use report_type="custom_report")
 # Optimized for scientific pest risk assessment:
 # - Multi-retriever: Tavily (general) + arXiv + Semantic Scholar + PubMed Central
 # - APA citation format, source curation, low-temp factual output
@@ -128,18 +137,6 @@ os.environ.update({
 EXCLUDED_DOMAINS = [
     "grokipedia.com",
     "wikipedia.org",
-]
-
-# Extra domains excluded for ENT3 — alternative trade databases that
-# the AI should never cite when SSB table 08801 is the required source
-ENT3_EXCLUDED_DOMAINS = [
-    "wits.worldbank.org",
-    "comtrade.un.org",
-    "ceicdata.com",
-    "statbase.org",
-    "trademap.org",
-    "macrotrends.net",
-    "oec.world",
 ]
 
 # =============================================================================
@@ -456,13 +453,9 @@ def update_pathway_justification(db_path: str, id_entry_pathway: int,
 # DAG CONTEXT FUNCTIONS
 # =============================================================================
 
-def normalize_code(code: str) -> str:
-    """Canonical form: uppercase, no trailing dot.
-
-    "EST2." → "EST2",  "est2" → "EST2",  "IMP2.1" → "IMP2.1",  "ENT2A" → "ENT2A"
-    All DAG dict keys and all filter comparisons use this form.
-    """
-    return code.upper().rstrip('.')
+# normalize_code is imported from module_loader (single canonical definition):
+# uppercase, no trailing dot — "EST2." → "EST2", "IMP2.1" → "IMP2.1", "ENT2A" → "ENT2A".
+# All DAG dict keys and filter comparisons use this form.
 
 
 def _first_n_sentences(text: str, n: int = 3) -> str:
