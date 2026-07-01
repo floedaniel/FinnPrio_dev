@@ -864,15 +864,6 @@ def build_ent3_ssb_context(db_path: str, assessment_id: int,
 
 
 # =============================================================================
-# QUESTION-SPECIFIC INSTRUCTIONS
-# =============================================================================
-
-def get_question_specific_instructions(question_code: str, pest_name: str,
-                                       pathway_name: str = None, hosts: str = None) -> str:
-    """Get research instructions from Rmd-derived JSON. Fails if unavailable."""
-    return build_justification_prompt(question_code, pest_name, pathway_name, hosts)
-
-# =============================================================================
 # SHARED QUERY BOILERPLATE
 # =============================================================================
 
@@ -901,45 +892,34 @@ FORMAT:
 # GPT RESEARCHER FUNCTIONS
 # =============================================================================
 
-def create_research_query(pest_name: str, question_code: str, question_text: str,
-                          question_info: str = "", pathway_name: str = None,
-                          hosts: str = None,
+def create_research_query(pest_name: str, question_code: str,
+                          pathway_name: str = None, hosts: str = None,
                           exclude_domains: List[str] = None,
                           prior_context: str = "") -> str:
-    """Create targeted research query.
+    """Build the custom_report query.
 
-    prior_context (if non-empty) is injected after the metadata header and
-    before the question block so the LLM reads established facts first.
-
-    Note: question_info from database is IGNORED when Rmd instructions are available,
-    as the Rmd provides more accurate and up-to-date guidance.
+    Layout: header -> prior DAG context -> verbatim question module -> answering
+    rules -> sources -> format rules -> excluded domains. The module text (from
+    finnprio_question_modules/) is used verbatim; custom_report uses this query
+    as the report-writing instruction.
     """
-    specific = get_question_specific_instructions(question_code, pest_name, pathway_name, hosts)
-    using_rmd_instructions = specific and "QUESTION" in specific
+    module_text = load_module(question_code)
 
-    # Structured metadata header — species/pathway stated once
-    header = (
-        f"PEST RISK ASSESSMENT QUERY\n"
-        f"Species: {pest_name}\n"
-        f"Pathway: {pathway_name or 'N/A'}\n"
-        f"PRA area: Norway (temperate to boreal climate, cold winters)"
-    )
+    header_lines = [
+        "PEST RISK ASSESSMENT QUERY",
+        f"Species: {pest_name}",
+        f"Pathway: {pathway_name or 'N/A'}",
+        "PRA area: Norway (temperate to boreal climate, cold winters)",
+    ]
+    if hosts:
+        header_lines.append(f"Documented hosts for this pest: {hosts}")
+    header = "\n".join(header_lines)
 
-    # Question block: Rmd-derived context (preferred) or fallback from database
-    if using_rmd_instructions:
-        question_block = specific
-    else:
-        question_block = f"QUESTION ({question_code}): {question_text}"
-        if question_info:
-            question_block += f"\n\nGUIDANCE:\n{question_info}"
-        if specific:
-            question_block += f"\n\n{specific}"
-
-    # Inject prior context after header, before question block
     parts = [header]
     if prior_context:
         parts.append(prior_context)
-    parts.extend([question_block, _ANSWERING_RULES, _SOURCES, _FORMAT_RULES])
+    parts.append(module_text)
+    parts.extend([_ANSWERING_RULES, _SOURCES, _FORMAT_RULES])
 
     if exclude_domains:
         parts.append(f"EXCLUDED DOMAINS: {', '.join(exclude_domains)}")
