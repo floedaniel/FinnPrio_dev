@@ -77,7 +77,7 @@ EPPOCODES_TO_POPULATE = [ "DENCPO" ]
 # Example: QUESTION_FILTER = ["EST2"]  # Only process EST2
 # Multiple: QUESTION_FILTER = ["IMP4.1", "IMP4.2", "IMP4.3"]
 # Pathway questions: "ENT2A", "ENT2B", "ENT3", "ENT4"
-QUESTION_FILTER = ["EST1", "EST2", "IMP1"] # Full-pipeline run: process every question (IMP2.x + IMP4.x pipeline now validated)
+QUESTION_FILTER = [ ] # Full-pipeline run: process every question (IMP2.x + IMP4.x pipeline now validated)
 # "IMP2.1", "IMP2.2", "IMP2.3"
 # =============================================================================
 # API Keys - Read from files
@@ -116,7 +116,7 @@ os.environ.update({
 
     # Embeddings (for context compression / similarity filtering)
     "EMBEDDING": "openai:text-embedding-3-small",
-    "SIMILARITY_THRESHOLD": "0.42",
+    "SIMILARITY_THRESHOLD": "0.3",
 
     # Retrievers — Tavily (broad) + EPPO Global Database (pest-specific).
     # semantic_scholar and pubmed_central were dropped: they receive the full
@@ -129,8 +129,8 @@ os.environ.update({
     # Research depth. MAX_SEARCH_RESULTS_PER_QUERY (results fetched/ranked) is kept
     # in line with MAX_URLS_TO_SCRAPE (results actually scraped) so we don't fetch
     # far more than we use. gpt-researcher defaults are 5 / 10.
-    "MAX_SEARCH_RESULTS_PER_QUERY": "12",
-    "MAX_URLS_TO_SCRAPE": "12",
+    "MAX_SEARCH_RESULTS_PER_QUERY": "20",
+    "MAX_URLS_TO_SCRAPE": "15",
     "TOTAL_WORDS": "1000",
 
     # Output: APA for scientific traceability, curate sources for quality
