@@ -52,3 +52,10 @@ def test_strip_light_removes_bold_and_italic_markers():
 def test_strip_light_leaves_other_markdown_intact():
     assert strip_light("- item one") == "- item one"
     assert strip_light("[text](http://example.com)") == "[text](http://example.com)"
+
+
+def test_strip_light_preserves_intra_word_markers():
+    assert strip_light("text_embedding_3_small") == "text_embedding_3_small"
+    assert strip_light("[a](http://a_b_c.com)") == "[a](http://a_b_c.com)"
+    # standalone emphasis still stripped
+    assert strip_light("_i_ and **b**") == "i and b"

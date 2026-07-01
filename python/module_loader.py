@@ -52,8 +52,8 @@ def strip_light(text: str) -> str:
     preserved as a plain line — only the leading '#' markers are removed.
     """
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  # headings -> plain line
-    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)              # **bold**
-    text = re.sub(r'__([^_]+)__', r'\1', text)                  # __bold__
-    text = re.sub(r'\*([^*]+)\*', r'\1', text)                  # *italic*
-    text = re.sub(r'_([^_]+)_', r'\1', text)                    # _italic_
+    text = re.sub(r'(?<!\w)\*\*([^*]+)\*\*(?!\w)', r'\1', text)   # **bold**
+    text = re.sub(r'(?<!\w)__([^_]+)__(?!\w)', r'\1', text)       # __bold__
+    text = re.sub(r'(?<!\w)\*([^*]+)\*(?!\w)', r'\1', text)       # *italic*
+    text = re.sub(r'(?<!\w)_([^_]+)_(?!\w)', r'\1', text)         # _italic_
     return text.strip()
