@@ -984,7 +984,10 @@ async def research_justification(pest_name: str, question_code: str,
             logging.warning("MCP research failed for %s %s: %s",
                             pest_name, question_code, e)
         print(f"ERROR: {str(e)}")
-        return f"ERROR: {str(e)}"
+        # Return None (not an "ERROR: ..." string) so the caller skips the DB
+        # write and leaves the existing answer untouched — a transient
+        # OpenAI/Tavily failure must not overwrite a justification with error text.
+        return None
     finally:
         if mcp_configs:
             os.environ["RETRIEVER"] = original_retriever
@@ -1078,9 +1081,11 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                 mcp_configs=q_mcp_configs,
             )
 
-            update_answer_justification(db_path, answer['idAnswer'], ai_text)
-
-            print(f"✅ Updated ({len(ai_text)} chars)")
+            if ai_text:
+                update_answer_justification(db_path, answer['idAnswer'], ai_text)
+                print(f"✅ Updated ({len(ai_text)} chars)")
+            else:
+                print("⏭️  Research failed — DB left unchanged for this question")
         except Exception as e:
             print(f"❌ Error: {str(e)}")
 
@@ -1163,11 +1168,13 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                             mcp_configs=pq_mcp_configs,
                         )
 
-                        update_pathway_justification(
-                            db_path, id_entry_pathway,
-                            pq['idPathQuestion'], ai_text)
-
-                        print(f"✅ Updated ({len(ai_text)} chars)")
+                        if ai_text:
+                            update_pathway_justification(
+                                db_path, id_entry_pathway,
+                                pq['idPathQuestion'], ai_text)
+                            print(f"✅ Updated ({len(ai_text)} chars)")
+                        else:
+                            print("⏭️  Research failed — DB left unchanged for this pathway question")
                     except Exception as e:
                         print(f"❌ Error: {str(e)}")
         else:
