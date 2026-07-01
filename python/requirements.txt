@@ -1,3 +1,9 @@
 gpt-researcher>=0.15.1
 openai>=2.0.0
 tavily>=1.0.0
+
+# MCP servers (nibio_mcp_server.py, ssb_mcp_server.py) use the v2 API
+# `from fastmcp import FastMCP`. fastmcp>=3 is a meta-package (code lives in
+# fastmcp-slim) that pulls starlette>=1.0, which conflicts with fastapi<0.51
+# (a gpt-researcher dep). Pin to v2 to keep the dependency set consistent.
+fastmcp<3
