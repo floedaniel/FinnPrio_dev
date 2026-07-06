@@ -67,7 +67,7 @@ os.environ.setdefault("LLM_MODEL_FAST", "gpt-5.4-mini")
 #
 # OPTION 1: Manual path (uncomment and edit the line below)
 # INPUT_DATABASE = None
-INPUT_DATABASE = r"C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/test databases/ai_test_db/ai_test_v004_2026-05-18T22-14-29.db"
+INPUT_DATABASE = r"C:/Dev/FinnPrio/FinnPRIO_development/databases/test databases/ai_test_db/ai_test_v004_2026-05-18T22-14-29.db"
 #
 # OPTION 2: Auto-detect (leave INPUT_DATABASE = None)
 # Automatically finds most recent *_ai_enhanced_*.db in outputs/ folder

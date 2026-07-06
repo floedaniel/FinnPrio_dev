@@ -38,8 +38,8 @@ import re
 SKIP_EXISTING_JUSTIFICATION = True
 
 # Database paths
-DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel.db"
-DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\test databases"
+DEFAULT_DB_PATH = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel.db"
+DEFAULT_OUTPUT_DIR = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\test databases"
 
 # Filter by EPPO codes (empty list = process all species)
 EPPOCODES_TO_POPULATE = ["ANOLHO"]

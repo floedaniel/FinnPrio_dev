@@ -40,10 +40,10 @@ SKIP_EXISTING_JUSTIFICATION = True
 
 # Database paths
 # CURRENT SETTING: Using AI-enhanced database (with existing justifications)
-DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel.db"
+DEFAULT_DB_PATH = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel.db"
 
 # Output directory (new copy will be created here)
-DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026"
+DEFAULT_OUTPUT_DIR = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\daniel_database_2026"
 
 # Filter by EPPO codes (empty list = process all species)
 # Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
@@ -51,7 +51,7 @@ EPPOCODES_TO_POPULATE = ["ANOLHO"]
 
 # GPT Researcher MCP Server Path
 # Download from: https://github.com/assafelovic/gptr-mcp
-GPTR_MCP_SERVER_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\python\gptr-mcp-master\server.py"
+GPTR_MCP_SERVER_PATH = r"C:\Dev\FinnPrio\FinnPRIO_development\python\gptr-mcp-master\server.py"
 
 # API Keys - Read from files
 OPENAI_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\chatgpt_apikey.txt"

@@ -49,7 +49,7 @@ MAX_JUSTIFICATION_LENGTH = 3000  # Keep more justification context
 TEMPERATURE = 0.1
 
 # Database Path
-INPUT_DATABASE = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\test databases\daniel_local_fast_17_02_2026.db"
+INPUT_DATABASE = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\test databases\daniel_local_fast_17_02_2026.db"
 
 # Filter by EPPO codes (empty list = process all species)
 EPPOCODES_TO_POPULATE = ["ANOLHO"]

@@ -2,7 +2,7 @@ library(DBI)
 library(RSQLite)
 
 
-DB_PATH <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/daniel_database_2026/daniel_v009_2026-04-20T11-16-00_sdm.db"
+DB_PATH <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/daniel_database_2026/daniel_v009_2026-04-20T11-16-00_sdm.db"
 
 con <- dbConnect(SQLite(), DB_PATH)
 
@@ -50,7 +50,7 @@ dbDisconnect(con)
 
 # -------------------------------------------------------------------------
 
-DB_PATH <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/daniel_database_2026/daniel_v009_2026-04-20T11-16-00_sdm.db"
+DB_PATH <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/daniel_database_2026/daniel_v009_2026-04-20T11-16-00_sdm.db"
 
 con <- dbConnect(SQLite(), DB_PATH)
 

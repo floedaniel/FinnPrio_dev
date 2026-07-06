@@ -6,7 +6,7 @@ library(dplyr)
 # CONFIGURATION — edit this before running
 # =============================================================================
 
-BASE_DIR <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/finnprio_2026"
+BASE_DIR <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/finnprio_2026"
 
 OUTPUT_FOLDER <- file.path(BASE_DIR, "master_database_2026")
 OUTPUT_DB     <- "master_database_2026.db"

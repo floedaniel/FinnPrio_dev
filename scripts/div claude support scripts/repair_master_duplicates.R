@@ -8,7 +8,7 @@
 # Deletes all related rows in FK-safe order.
 # ==============================================================================
 
-MASTER_DB  <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/master_database/finnprio_master.db"
+MASTER_DB  <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/master_database/finnprio_master.db"
 DRY_RUN    <- FALSE   # set TRUE to preview without deleting
 
 library(DBI)

@@ -27,7 +27,7 @@ FastMCP (the framework we use to BUILD the SSB MCP server):
   • Install:       uv add "fastmcp"  OR  pip install fastmcp
 
 Existing FinnPRIO reference (DO NOT call directly — extract semantics):
-  C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\python\standalone_ssb_MPC.py
+  C:\Dev\FinnPrio\FinnPRIO_development\python\standalone_ssb_MPC.py
 
 ═══════════════════════════════════════════════════════════════════════════
 ARCHITECTURE

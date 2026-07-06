@@ -22,11 +22,11 @@
 # 0. CONFIGURATION
 # ==============================================================================
 
-MASTER_DB <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/master_database/finnprio_master.db"
+MASTER_DB <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/master_database/finnprio_master.db"
 
 SOURCE_FILES <- c(
-  "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/master_database/yearly copies/FinnPrio_fg9_batch_1_2025.db",
-  "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/master_database/yearly copies/master_database_2026.db"
+  "C:/Dev/FinnPrio/FinnPRIO_development/databases/master_database/yearly copies/FinnPrio_fg9_batch_1_2025.db",
+  "C:/Dev/FinnPrio/FinnPRIO_development/databases/master_database/yearly copies/master_database_2026.db"
 )
 
 # ==============================================================================

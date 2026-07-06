@@ -23,7 +23,7 @@ library(dplyr)
 # CONFIGURATION
 # ==============================================================================
 
-DB_PATH  <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/finnprio_2026/iben_database_2026/4_master/iben.db"
+DB_PATH  <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/finnprio_2026/iben_database_2026/4_master/iben.db"
 
 DRY_RUN  <- TRUE   # TRUE = report only, no changes made
                    # FALSE = apply all repairs

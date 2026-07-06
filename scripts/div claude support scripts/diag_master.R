@@ -1,6 +1,6 @@
 library(DBI)
 library(RSQLite)
-con <- dbConnect(SQLite(), "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/master database/finnprio_master.db")
+con <- dbConnect(SQLite(), "C:/Dev/FinnPrio/FinnPRIO_development/databases/master database/finnprio_master.db")
 
 dups <- dbGetQuery(con, "
   SELECT p.eppoCode, p.scientificName, COUNT(*) AS n,

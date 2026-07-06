@@ -29,9 +29,9 @@ source("R/internal functions.R")  # For get_points_as_table()
 
 # Database Path
 
-# DB_PATH <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/master_database/yearly copies/FinnPrio_fg9_batch_1_2025.db"
+# DB_PATH <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/master_database/yearly copies/FinnPrio_fg9_batch_1_2025.db"
 
-# DB_PATH <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/finnprio_2026/master_database_2026/master_database_2026.db"
+# DB_PATH <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/finnprio_2026/master_database_2026/master_database_2026.db"
 
 # Simulation Settings
 ITERATIONS <- 50000  # Number of Monte Carlo iterations (default: 50000)

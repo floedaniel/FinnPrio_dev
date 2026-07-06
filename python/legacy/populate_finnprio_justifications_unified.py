@@ -57,15 +57,15 @@ from mcp.client.stdio import stdio_client
 SKIP_EXISTING_JUSTIFICATION = False
 
 # Database paths
-DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel.db"
-DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026"
+DEFAULT_DB_PATH = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel.db"
+DEFAULT_OUTPUT_DIR = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\daniel_database_2026"
 
 # Filter by EPPO codes (empty list = process all)
 EPPOCODES_TO_POPULATE = ["ANOLHO"]
 
 # MCP Server Paths
 EPPO_MCP_SERVER_PATH = Path(__file__).parent / "servers" / "eppo_mcp_server.py"
-GPTR_MCP_SERVER_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\python\gptr-mcp-master\server.py"
+GPTR_MCP_SERVER_PATH = r"C:\Dev\FinnPrio\FinnPRIO_development\python\gptr-mcp-master\server.py"
 
 # API Keys
 OPENAI_API_KEY_FILE = r"C:\Users\dafl\Desktop\API keys\chatgpt_apikey.txt"

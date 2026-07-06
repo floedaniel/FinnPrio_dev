@@ -12,7 +12,7 @@ library(jsonlite)
 # CONFIG - UPDATE THESE PATHS
 SPECIES_DIR <-  "C:/Users/dafl/OneDrive - Folkehelseinstituttet/Prosjektdata - Dokumenter/VKM Data/26.08.2024_lopende_oppdrag_plantehelse/Species"
                
-DB_PATH <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/daniel_database_2026/daniel_v009_2026-04-20T11-16-00.db"
+DB_PATH <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/daniel_database_2026/daniel_v009_2026-04-20T11-16-00.db"
 THRESHOLD <- 0.1                  # fallback only; JSON optimal_threshold wins
 AREA_FLOOR_PCT <- 0.1             # verdict "NO" if pct_area_suitable < this
 SDM_FOLDER <- "SDMtune_updated_2"

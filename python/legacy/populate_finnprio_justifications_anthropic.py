@@ -29,9 +29,9 @@ import re
 SKIP_EXISTING_JUSTIFICATION = False
 
 # Database paths
-DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\selam_database_2026\selam_2026_antrophic.db"
+DEFAULT_DB_PATH = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\selam_database_2026\selam_2026_antrophic.db"
 
-DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\selam_database_2026"
+DEFAULT_OUTPUT_DIR = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\selam_database_2026"
 
 # Filter by EPPO codes (empty list = process all species)
 # Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]

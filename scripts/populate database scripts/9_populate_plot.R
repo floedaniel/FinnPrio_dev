@@ -9,11 +9,11 @@
 # 0. CONFIGURATION
 # ==============================================================================
 
-DB_PATH <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/finnprio_2026/master_database_2026/master_database_2026.db"
+DB_PATH <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/finnprio_2026/master_database_2026/master_database_2026.db"
 
 MASTER_SPECIES_FILE <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/Prosjektdata - Dokumenter/VKM Data/26.08.2024_lopende_oppdrag_plantehelse/data/2_processed_data/master_species.xlsx"
 
-OUTPUT_DIR <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/finnprio_2026/master_database_2026/plots"
+OUTPUT_DIR <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/finnprio_2026/master_database_2026/plots"
 
 ONLY_FINISHED     <- FALSE   # TRUE = exclude unfinished assessments
 ONLY_VALID        <- FALSE   # TRUE = only valid assessments

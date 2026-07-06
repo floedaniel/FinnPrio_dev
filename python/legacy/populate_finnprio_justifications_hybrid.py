@@ -300,10 +300,10 @@ VERBOSE = False  # Set True to see GPT Researcher internal logs
 
 # DATABASE PATH - UPDATE THIS IF YOU ADDED PATHWAYS
 # CURRENT SETTING: Using AI-enhanced database (with existing justifications)
-DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel_ai_enhanced_13_04_2026.db"
+DEFAULT_DB_PATH = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\daniel_database_2026\daniel_ai_enhanced_13_04_2026.db"
 
 # Output directory (new copy will be created here)
-DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\FinnPRIO_development\databases\daniel_database_2026"
+DEFAULT_OUTPUT_DIR = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\daniel_database_2026"
 
 # Filter by EPPO codes (empty list = process all species)
 # Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
