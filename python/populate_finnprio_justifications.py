@@ -15,6 +15,7 @@ Key features:
 import os
 import sys
 import asyncio
+import json
 import logging
 import sqlite3
 import shutil
@@ -35,6 +36,10 @@ from context_store import ContextStore
 
 # Import instructions loader (auto-generates JSON from Rmd if needed)
 from instructions_loader import build_justification_prompt
+
+# Direct data-source helpers (no MCP stdio subprocess)
+from nibio_query_lib import nibio_list_groups, nibio_list_posts, nibio_get_data
+from ssb_query_lib import toll_search_hs_codes, ssb_query_data
 
 # DAG configuration: question dependencies and sibling constraints
 from dag_config import QUESTION_DEPENDENCIES, PATHWAY_DEPENDENCIES, SIBLING_CONSTRAINTS
@@ -59,14 +64,18 @@ SKIP_EXISTING_JUSTIFICATION = False # True
 
 # DATABASE PATH - UPDATE THIS IF YOU ADDED PATHWAYS
 # CURRENT SETTING: Using AI-enhanced database (with existing justifications)
-DEFAULT_DB_PATH = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\Manuscript\analysis\databases\0_raw\raw_data.db"
+# DEFAULT_DB_PATH = r"C:\Dev\FinnPrio\Manuscript\analysis\databases\0_raw\raw_data.db"
+
+DEFAULT_DB_PATH = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\test databases\ai_test_db\ai_test.db"
 
 # Output directory (new copy will be created here)
-DEFAULT_OUTPUT_DIR = r"C:\Users\dafl\OneDrive - Folkehelseinstituttet\FinnPrio\Manuscript\analysis\databases\1_rep"
+# DEFAULT_OUTPUT_DIR = r"C:\Dev\FinnPrio\Manuscript\analysis\databases\2_rep"
+
+DEFAULT_OUTPUT_DIR = r"C:\Dev\FinnPrio\FinnPRIO_development\databases\test databases\ai_test_db"
 
 # Filter by EPPO codes (empty list = process all species)
 # Example: EPPOCODES_TO_POPULATE = ["XYLEFA", "ANOLGL", "DROSSU"]
-EPPOCODES_TO_POPULATE = [ ]
+EPPOCODES_TO_POPULATE = [ "FUSAEW" ]
 
 # Filter by question codes (empty list = process all questions)
 # Example: QUESTION_FILTER = ["EST2"]  # Only process EST2
@@ -793,39 +802,108 @@ def build_prior_context(db_path: str, assessment_id: int, question_code: str,
 
 
 # =============================================================================
-# NIBIO MCP INTEGRATION (IMP1, EST2, IMP2.2)
+# NIBIO DIRECT DATA FETCH (IMP1, EST2, IMP2.2)
 # =============================================================================
 
 NIBIO_QUESTIONS = {'IMP1', 'EST2', 'IMP2.2'}
 
 
-def build_nibio_mcp_configs() -> list:
-    """Return mcp_configs for the NIBIO Totalkalkylen server (stdio subprocess)."""
-    server_path = Path(__file__).parent / "nibio_mcp_server.py"
-    return [{
-        "name": "nibio_totalkalkylen",
-        "command": sys.executable,
-        "args": [str(server_path)],
-    }]
+async def _nibio_call(fn, *args, timeout: int = 15):
+    """Run a synchronous NIBIO helper in a thread with a timeout."""
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(fn, *args), timeout=timeout)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def _select_nibio_posts(posts: list, question_code: str, keyword: str) -> list:
+    """Sort posts by relevance for the current question."""
+    keyword_lower = keyword.lower()
+    scored = []
+    for post in posts:
+        name = post.get("name", "").lower()
+        score = 0
+        if keyword_lower in name:
+            score += 5
+        if question_code == 'IMP1':
+            if 'salg' in name:
+                score += 10
+            if 'produksjon' in name or 'total' in name:
+                score += 8
+        elif question_code == 'EST2':
+            if 'areal' in name:
+                score += 10
+            if 'produksjon' in name or 'total' in name:
+                score += 8
+        elif question_code == 'IMP2.2':
+            if 'produksjon' in name or 'total' in name:
+                score += 10
+            if 'salg' in name:
+                score += 8
+        scored.append((post, score))
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [post for post, _ in scored]
+
+
+async def fetch_nibio_data(question_code: str, hosts: str = "") -> dict:
+    """Fetch NIBIO Totalkalkylen data directly for the given hosts.
+
+    Returns a dict with group/post/data results, or empty if no hosts/API fails.
+    Runs API calls off the main event loop with short timeouts so a slow
+    NIBIO response cannot freeze the pipeline.
+    """
+    keywords = [h.strip() for h in (hosts or "").split(",") if h.strip()]
+    if not keywords:
+        return {}
+
+    # No caps on groups/posts per host or overall results: cost/latency of
+    # extra NIBIO calls is not a concern; return everything found.
+    results = []
+    seen_post_ids = set()
+    for keyword in keywords:
+        try:
+            groups_json = await _nibio_call(nibio_list_groups, keyword)
+            groups = json.loads(groups_json).get("groups", [])
+        except Exception:
+            continue
+        if not groups:
+            continue
+        for group in groups:
+            try:
+                posts_json = await _nibio_call(nibio_list_posts, group["id"])
+                posts = json.loads(posts_json).get("posts", [])
+            except Exception:
+                continue
+            selected = _select_nibio_posts(posts, question_code, keyword)
+            for post in selected:
+                if post["id"] in seen_post_ids:
+                    continue
+                try:
+                    data_json = await _nibio_call(nibio_get_data, post["id"], 10)
+                except Exception:
+                    continue
+                seen_post_ids.add(post["id"])
+                results.append({
+                    "group": group,
+                    "post": post,
+                    "data": json.loads(data_json),
+                })
+    return {"nibio_results": results}
 
 
 def build_nibio_context(db_path: str, assessment_id: int, question_code: str,
-                         hosts: str = "") -> str:
+                         hosts: str = "", fetched_data: dict = None) -> str:
     """Build NIBIO-specific prior context for IMP1, EST2, IMP2.2 queries.
 
     Fetches EST1 justification (host plant context) already written to the DB.
+    If NIBIO data was fetched successfully, it is injected directly into the
+    context so the answer can cite real Norwegian agricultural statistics.
     """
     prior = get_regular_prior_answers(db_path, assessment_id, ["EST1"])
 
     lines = [
         "NORWEGIAN AGRICULTURAL STATISTICS CONTEXT (NIBIO Totalkalkylen):",
         f"Question: {question_code}",
-        "",
-        "Use the NIBIO Totalkalkylen MCP tools to find Norwegian production statistics",
-        "for the host crop(s) of this pest. Workflow:",
-        "  1. list_groups(search=<crop keyword>) — find the relevant product group",
-        "  2. list_posts(group_id) — list line items (prefer 'Produksjon' or 'Salg' posts)",
-        "  3. get_data(post_id, years_back=10) — retrieve price, quantity, and value series",
         "",
     ]
 
@@ -857,11 +935,20 @@ def build_nibio_context(db_path: str, assessment_id: int, question_code: str,
         excerpt = _first_n_sentences(prior["EST1"], 3)
         lines += ["", f"Host plant context (from EST1): {excerpt}"]
 
+    if fetched_data and fetched_data.get("nibio_results"):
+        lines += [
+            "",
+            "PRE-FETCHED NIBIO DATA (use these figures in your justification):",
+            json.dumps(fetched_data, indent=2, ensure_ascii=False),
+        ]
+    else:
+        lines += ["", "No NIBIO data could be fetched automatically."]
+
     return "\n".join(lines)
 
 
 # =============================================================================
-# SSB MCP INTEGRATION (ENT3 only)
+# SSB DIRECT DATA FETCH (ENT3 only)
 # =============================================================================
 
 # Pathways where trade volume data from SSB is meaningful.
@@ -883,23 +970,138 @@ def pathway_uses_ssb(pathway_name: str) -> bool:
     return any(kw in name_lower for kw in SSB_PATHWAYS)
 
 
-def build_ent3_mcp_configs() -> list:
-    """Return mcp_configs for the SSB trade data server (stdio subprocess)."""
-    server_path = Path(__file__).parent / "ssb_mcp_server.py"
-    return [{
-        "name": "ssb_trade",
-        "command": sys.executable,
-        "args": [str(server_path)],
-    }]
+async def _ssb_call(fn, *args, timeout: int = 30):
+    """Run a synchronous SSB helper in a thread with a timeout."""
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(fn, *args), timeout=timeout)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+_SSB_WOOD_CHAPTERS = ["44", "45"]
+_SSB_FOOD_CHAPTERS = ["06", "07", "08", "09", "10", "11", "12", "13", "14"]
+
+
+def _ssb_chapters_for_pathway(pathway_name: str) -> list:
+    """Scope the customs-tariff chapter search to the commodity type the
+    pathway actually concerns. Without this, a "Food and fodder" ENT3
+    query surfaced wood commodities (Acer/Betula/Quercus maple/birch/oak
+    wood) just because those hosts' genus happened to match first in a
+    long host list — pathway relevance was never checked at all."""
+    if "wood" in pathway_name.lower():
+        return _SSB_WOOD_CHAPTERS
+    return _SSB_FOOD_CHAPTERS
+
+
+async def _toll_search_with_fallback(keyword: str, chapters: list) -> list:
+    """Search toll.no for a host keyword within the given chapters, falling
+    back from the full scientific name to its bare genus when the full
+    name finds nothing.
+
+    Host strings from the DB are scientific binomials ("Quercus robur"),
+    but toll.no's commodity text is mostly English common names, with
+    Latin GENUS abbreviations only for a few wood species ("Betula spp.",
+    "Fagus" for beech). A two-word binomial never substring-matches even
+    when its genus alone would (verified live: "Quercus robur" -> 0
+    matches, "Quercus" -> 1) — so the genus-only retry is what actually
+    finds anything for those hosts.
+
+    Deliberately does NOT fall back to searching all customs chapters if
+    the given chapters find nothing. That was tried and reliably produces
+    false positives: host genus "Morus" (mulberry trees) matched a
+    chapter-03 FISH tariff entry when searched unscoped, because "Morus"
+    is also the seabird genus for gannets — a coincidental cross-kingdom
+    Latin-name collision. Every genuine match found in this pipeline was
+    already within plant/wood chapters, so widening the search only adds
+    false-positive risk, never real coverage.
+
+    This still cannot find common-name-only commodities (avocado, apple,
+    olive, grape) from a scientific name alone, since their genus
+    (Persea, Malus, Olea, Vitis) never appears in the tariff text either —
+    that needs a scientific-to-common-name translation step, which this
+    keyword-substring approach does not attempt.
+    """
+    candidates = [keyword]
+    genus = keyword.split()[0] if " " in keyword else None
+    if genus and genus != keyword:
+        candidates.append(genus)
+
+    for candidate in candidates:
+        try:
+            tariff_json = await _ssb_call(toll_search_hs_codes, candidate, chapters, 10)
+            matches = json.loads(tariff_json).get("matches", [])
+        except Exception:
+            continue
+        if matches:
+            return matches
+    return []
+
+
+async def fetch_ssb_data(pathway_name: str, hosts: str = "") -> dict:
+    """Fetch SSB table 08801 import data directly for the given hosts.
+
+    Searches the Norwegian customs tariff by host keyword, then queries SSB
+    with wildcard 8-digit Varekoder. Returns a dict with hosts/code/data
+    results, or empty if no hosts/API fails.
+
+    Several scientific names commonly resolve to the same genus-level
+    Varekode (e.g. multiple Acer species all map to 44079300 — SSB doesn't
+    distinguish maple species). Querying and presenting that as separate,
+    identical-looking result blocks per host risks the downstream report
+    double-counting the same trade volume once per host. Results are keyed
+    by their resolved code set, so each unique commodity is queried and
+    shown once, listing every host it covers.
+    """
+    keywords = [h.strip() for h in (hosts or "").split(",") if h.strip()]
+    if not keywords:
+        return {}
+
+    chapters = _ssb_chapters_for_pathway(pathway_name)
+    results_by_codes = {}
+    order = []
+    for keyword in keywords:
+        matches = await _toll_search_with_fallback(keyword, chapters)
+        if not matches:
+            continue
+        codes = [m["id"] + "*" for m in matches[:8]]
+        code_key = tuple(sorted(codes))
+
+        if code_key in results_by_codes:
+            results_by_codes[code_key]["hosts"].append(keyword)
+            continue
+
+        selection = [
+            {"variableCode": "Varekoder", "valueCodes": codes},
+            {"variableCode": "ImpEks", "valueCodes": ["1"]},
+            {"variableCode": "Land", "valueCodes": ["*"]},
+            {"variableCode": "ContentsCode", "valueCodes": ["Mengde1", "Verdi"]},
+            {"variableCode": "Tid", "valueCodes": ["top(5)"]},
+        ]
+        try:
+            data_json = await _ssb_call(ssb_query_data, "08801", selection)
+        except Exception:
+            continue
+        results_by_codes[code_key] = {
+            "hosts": [keyword],
+            "codes": codes,
+            "data": json.loads(data_json),
+        }
+        order.append(code_key)
+    # No cap: every host gets searched and, if it resolves to a commodity,
+    # queried. Result entries are tiny and deduped by commodity code, so
+    # memory is not a real constraint even for an unusually long host list.
+    return {"ssb_results": [results_by_codes[k] for k in order]}
 
 
 def build_ent3_ssb_context(db_path: str, assessment_id: int,
-                            pathway_name: str, hosts: str = "") -> str:
+                            pathway_name: str, hosts: str = "",
+                            fetched_data: dict = None) -> str:
     """Build SSB-specific prior context for ENT3 trade data queries.
 
     Fetches ENT1 (pest distribution → source regions) and EST1 (host plants
     → HS codes) justifications already written to the DB by the DAG pipeline.
-    Falls back gracefully if either has not been written yet.
+    If SSB data was fetched successfully, it is injected directly into the
+    context so the answer can cite real Norwegian import statistics.
     """
     prior = get_regular_prior_answers(db_path, assessment_id, ["ENT1", "EST1"])
 
@@ -908,21 +1110,13 @@ def build_ent3_ssb_context(db_path: str, assessment_id: int,
         f"Pathway: {pathway_name}",
         "Years: last 5",
         "",
-        "DATA SOURCE REQUIREMENT: Use ONLY SSB Statistics Norway table 08801 for",
-        "import volume data. Do NOT cite or use WITS, UN Comtrade, CEIC, Statbase,",
-        "TradeMap, OEC, or any other trade database. SSB table 08801 is the authoritative",
-        "Norwegian trade statistics source and must be the sole source for import figures.",
+        "PREFERRED SOURCE: SSB Statistics Norway table 08801 is the preferred source",
+        "for Norwegian import volume figures — prefer it over WITS, UN Comtrade, CEIC,",
+        "Statbase, TradeMap, OEC or similar when both are available. It is one input",
+        "among several, not the only permissible one: combine it with other",
+        "literature/evidence on trade volume where relevant, and state clearly which",
+        "figures come from SSB table 08801 versus other sources.",
         "",
-        "Workflow:",
-        "  1. Call search_tariff_codes(<host crop keyword>) to find the exact 8-digit",
-        "     Varekoder for the relevant commodity.",
-        "  2. Call query_data('08801', ...) with those Varekoder to retrieve annual",
-        "     import volumes (tonnes) and values (NOK) for the last 5 years.",
-        "",
-        "HS chapters: 06 (live plants/cuttings), 07 (vegetables), 08 (fruit/nuts),",
-        "10 (cereals), 12 (oil seeds), 44 (wood: 4403=roundwood, 4407=sawnwood, 4415=packaging).",
-        "Wood genera: 4403.91=oak, .92=beech, .95/.96=birch, .97=poplar, .99=other non-coniferous;",
-        "4407 mirrors the same subcode structure for sawnwood.",
     ]
 
     if hosts:
@@ -936,11 +1130,30 @@ def build_ent3_ssb_context(db_path: str, assessment_id: int,
         excerpt = _first_n_sentences(prior["EST1"], 3)
         lines += ["", f"Host plant context (from EST1, for HS code selection): {excerpt}"]
 
+    if fetched_data and fetched_data.get("ssb_results"):
+        lines += [
+            "",
+            "PRE-FETCHED SSB TABLE 08801 IMPORT DATA (complementary evidence — combine with",
+            "other sources rather than relying on it exclusively). Each entry's 'hosts' list",
+            "gives every host species that resolved to that same commodity code (SSB often",
+            "uses one genus-level code for several species) — treat these as ONE traded",
+            "commodity shared by those hosts, not separate volumes to sum:",
+            json.dumps(fetched_data, indent=2, ensure_ascii=False),
+        ]
+    else:
+        lines += [
+            "",
+            "No SSB trade data could be fetched automatically. If you can determine",
+            "relevant 8-digit Varekoder from the host species, use them with a trailing *",
+            "wildcard when querying table 08801 (e.g. 07011000*).",
+        ]
+
     lines += [
         "",
         "Report aggregate total imports first (all HS codes combined, by year),",
         "then per-HS-code breakdown for genera that have genus-specific codes.",
-        "All figures must come from SSB table 08801 only.",
+        "Label SSB-table-08801 figures as such; supplement with other evidence",
+        "where SSB data is incomplete or does not cover a relevant host/commodity.",
     ]
 
     return "\n".join(lines)
@@ -1220,13 +1433,14 @@ async def process_assessment(db_path: str, assessment_id: int = None,
         q_mcp_configs = None
         norm_code = normalize_code(answer['code'])
         if norm_code in NIBIO_QUESTIONS:
+            nibio_fetched = await fetch_nibio_data(norm_code, hosts=hosts)
             nibio_ctx = build_nibio_context(
-                db_path, assessment_id, norm_code, hosts=hosts)
+                db_path, assessment_id, norm_code, hosts=hosts,
+                fetched_data=nibio_fetched)
             prior_context = (
                 (prior_context + '\n\n' + nibio_ctx).strip()
                 if prior_context else nibio_ctx
             )
-            q_mcp_configs = build_nibio_mcp_configs()
 
         try:
             ai_text = await research_justification(
@@ -1307,18 +1521,19 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                         db_path, assessment_id, pq['code'],
                         id_entry_pathway=id_entry_pathway)
 
-                    # ENT3: inject SSB trade context and enable MCP retriever
+                    # ENT3: inject SSB trade context directly.
                     # Only for pathways with a real commodity trade stream.
                     pq_mcp_configs = None
                     if (normalize_code(pq['code']) == 'ENT3'
                             and pathway_uses_ssb(pathway_name)):
+                        ssb_fetched = await fetch_ssb_data(pathway_name, hosts=hosts)
                         ssb_ctx = build_ent3_ssb_context(
-                            db_path, assessment_id, pathway_name, hosts=hosts)
+                            db_path, assessment_id, pathway_name, hosts=hosts,
+                            fetched_data=ssb_fetched)
                         prior_context = (
                             (prior_context + '\n\n' + ssb_ctx).strip()
                             if prior_context else ssb_ctx
                         )
-                        pq_mcp_configs = build_ent3_mcp_configs()
 
                     try:
                         ai_text = await research_justification(

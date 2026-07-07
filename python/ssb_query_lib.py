@@ -8,6 +8,7 @@ imported by standalone_ssb_MPC.py (CLI agent backend).
 
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -71,7 +72,12 @@ _EXCLUDED_WOOD_HEADINGS: frozenset = frozenset({
 def _ensure_toll_xml() -> Path:
     """Download the customs tariff XML if not already cached locally."""
     if not _TOLL_CACHE.exists():
-        urllib.request.urlretrieve(_TOLL_XML_URL, _TOLL_CACHE)
+        req = urllib.request.Request(
+            _TOLL_XML_URL,
+            headers={"User-Agent": "FinnPRIO-assessor/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as response:
+            _TOLL_CACHE.write_bytes(response.read())
     return _TOLL_CACHE
 
 
@@ -221,9 +227,20 @@ def ssb_search_codes(table_id: str, variable: str, search: str,
     }, indent=2, ensure_ascii=False)
 
 
+_TRANSIENT_HTTP_STATUSES = {502, 503, 504}
+_RETRY_DELAYS = [1, 2, 4]  # seconds; one entry per retry attempt
+
+
 def ssb_query_data(table_id: str, selection: list,
                    lang: str = "en") -> str:
-    """POST query to SSB and return parsed results as a readable table."""
+    """POST query to SSB and return parsed results as a readable table.
+
+    Retries transient 502/503/504 responses with short backoff — SSB is
+    occasionally briefly overloaded/unavailable (observed live: a query
+    failed with 503 and succeeded on retry moments later). A deterministic
+    error (e.g. 400 bad selection) is not retried, since retrying it can
+    never succeed.
+    """
     url = f"{SSB_BASE}/tables/{table_id}/data?lang={lang}&outputFormat=json-stat2"
     body = json.dumps({"selection": selection}).encode()
     req = urllib.request.Request(
@@ -239,41 +256,50 @@ def ssb_query_data(table_id: str, selection: list,
     # the per-read socket timeout.
     MAX_BYTES = 8 * 1024 * 1024  # 8 MB — headroom for broad-host queries (was 4 MB)
     WALL_TIMEOUT = 120            # seconds total for the entire read (was 90)
-    raw = b""
-    deadline = time.monotonic() + WALL_TIMEOUT
-    with urllib.request.urlopen(req, timeout=60) as r:
-        content_length = r.headers.get("Content-Length")
-        if content_length and int(content_length) > MAX_BYTES:
-            return json.dumps({
-                "error": (
-                    f"SSB response too large ({int(content_length):,} bytes). "
-                    "Narrow the selection: use specific HS codes instead of wildcards, "
-                    "limit Land to specific countries, or reduce the time range."
-                ),
-                "selection": selection,
-            }, ensure_ascii=False)
-        chunk = r.read(65536)
-        while chunk:
-            raw += chunk
-            if time.monotonic() > deadline:
-                return json.dumps({
-                    "error": (
-                        f"SSB response timed out after {WALL_TIMEOUT}s. "
-                        "Narrow the selection: use specific HS codes instead of wildcards, "
-                        "limit Land to specific countries, or reduce the time range."
-                    ),
-                    "selection": selection,
-                }, ensure_ascii=False)
-            if len(raw) > MAX_BYTES:
-                return json.dumps({
-                    "error": (
-                        f"SSB response exceeded {MAX_BYTES:,} bytes. "
-                        "Narrow the selection: use specific HS codes instead of wildcards, "
-                        "limit Land to specific countries, or reduce the time range."
-                    ),
-                    "selection": selection,
-                }, ensure_ascii=False)
-            chunk = r.read(65536)
+
+    for attempt in range(len(_RETRY_DELAYS) + 1):
+        try:
+            raw = b""
+            deadline = time.monotonic() + WALL_TIMEOUT
+            with urllib.request.urlopen(req, timeout=60) as r:
+                content_length = r.headers.get("Content-Length")
+                if content_length and int(content_length) > MAX_BYTES:
+                    return json.dumps({
+                        "error": (
+                            f"SSB response too large ({int(content_length):,} bytes). "
+                            "Narrow the selection: use specific HS codes instead of wildcards, "
+                            "limit Land to specific countries, or reduce the time range."
+                        ),
+                        "selection": selection,
+                    }, ensure_ascii=False)
+                chunk = r.read(65536)
+                while chunk:
+                    raw += chunk
+                    if time.monotonic() > deadline:
+                        return json.dumps({
+                            "error": (
+                                f"SSB response timed out after {WALL_TIMEOUT}s. "
+                                "Narrow the selection: use specific HS codes instead of wildcards, "
+                                "limit Land to specific countries, or reduce the time range."
+                            ),
+                            "selection": selection,
+                        }, ensure_ascii=False)
+                    if len(raw) > MAX_BYTES:
+                        return json.dumps({
+                            "error": (
+                                f"SSB response exceeded {MAX_BYTES:,} bytes. "
+                                "Narrow the selection: use specific HS codes instead of wildcards, "
+                                "limit Land to specific countries, or reduce the time range."
+                            ),
+                            "selection": selection,
+                        }, ensure_ascii=False)
+                    chunk = r.read(65536)
+            break
+        except urllib.error.HTTPError as e:
+            if e.code in _TRANSIENT_HTTP_STATUSES and attempt < len(_RETRY_DELAYS):
+                time.sleep(_RETRY_DELAYS[attempt])
+                continue
+            raise
 
     data = json.loads(raw)
     dims = data["dimension"]

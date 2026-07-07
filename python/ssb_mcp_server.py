@@ -117,9 +117,13 @@ def query_data(table_id: str, selection: list, lang: str = "en") -> str:
     ImpEks codes: "1"=imports, "2"=exports.
     ContentsCode: "Mengde1"=quantity (tonnes), "Verdi"=value (NOK 1000).
 
+    Varekoder note: SSB 08801 Varekoder values carry a version suffix
+    (e.g. "44039500_1988"). Always append "*" to the 8-digit HS code
+    returned by search_tariff_codes so SSB matches the correct value.
+
     Example — annual birch roundwood imports from all countries, last 5 years:
     [
-      {"variableCode": "Varekoder", "valueCodes": ["44039500", "44039600"]},
+      {"variableCode": "Varekoder", "valueCodes": ["44039500*", "44039600*"]},
       {"variableCode": "ImpEks",    "valueCodes": ["1"]},
       {"variableCode": "Land",      "valueCodes": ["*"]},
       {"variableCode": "ContentsCode", "valueCodes": ["Mengde1", "Verdi"]},

@@ -11,7 +11,7 @@ if (!requireNamespace("openxlsx", quietly = TRUE)) install.packages("openxlsx")
 library(openxlsx)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-DB_PATH  <- "C:/Users/dafl/OneDrive - Folkehelseinstituttet/FinnPrio/FinnPRIO_development/databases/finnprio_2026/jorunn_database_2026/4_master/jorunn.db"
+DB_PATH  <- "C:/Dev/FinnPrio/FinnPRIO_development/databases/finnprio_2026/jorunn_database_2026/4_master/jorunn.db"
 OUT_XLSX <- sub("\\.db$", "_errors.xlsx", DB_PATH)
 
 # ── Connect ───────────────────────────────────────────────────────────────────
