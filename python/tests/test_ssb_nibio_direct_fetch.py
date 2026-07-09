@@ -106,6 +106,80 @@ def test_fetch_ssb_data_tries_every_host_not_just_first_three(monkeypatch):
     assert result.get("ssb_results")
 
 
+def test_fetch_nibio_data_translates_scientific_names_to_norwegian(monkeypatch):
+    """nibio_list_groups() matches search terms against Norwegian-only
+    group names (postgruppenavnBm) — verified live: "Pinus", "Picea",
+    "Solanum tuberosum" all -> 0 groups, "potet" -> 1 group. Scientific
+    host names must be translated before searching."""
+    seen = []
+
+    def fake_list_groups(keyword):
+        seen.append(keyword)
+        return json.dumps({"groups": []})
+    monkeypatch.setattr(pfj, "nibio_list_groups", fake_list_groups)
+    monkeypatch.setattr(pfj, "lookup_norwegian_name",
+                         lambda name: "Potet" if name == "Solanum tuberosum" else None)
+
+    run(pfj.fetch_nibio_data("IMP1", hosts="Solanum tuberosum"))
+
+    # Direct search used the translated term; the subsequent
+    # posts-across-groups fallback call (empty search) is separate.
+    assert "Potet" in seen
+
+
+def test_fetch_nibio_data_searches_posts_across_groups_when_no_group_matches(monkeypatch):
+    """"Purre" (leek) and "Tomater" (tomatoes) are posts inside the
+    broader "Hagebruksprodukter" group (id 2608), not groups themselves —
+    verified live via nibio_list_posts(2608). nibio_list_groups("Purre")
+    correctly finds nothing (no group is named "Purre"); the crop is only
+    findable by searching posts across all groups."""
+    def fake_list_groups(search=""):
+        # Direct group search for the crop name always misses (that's
+        # the whole point — it's a post, not a group). An empty/no-arg
+        # call is the "give me everything" listing used by the
+        # posts-across-groups fallback.
+        if search:
+            return json.dumps({"groups": []})
+        return json.dumps({"groups": [
+            {"id": 2607, "name": "Poteter"},
+            {"id": 2608, "name": "Hagebruksprodukter"},
+        ]})
+
+    def fake_list_posts(group_id, search=""):
+        if group_id == 2608 and search.lower() == "purre":
+            return json.dumps({"posts": [{"id": 62032, "name": "Purre"}]})
+        return json.dumps({"posts": []})
+
+    monkeypatch.setattr(pfj, "nibio_list_groups", fake_list_groups)
+    monkeypatch.setattr(pfj, "nibio_list_posts", fake_list_posts)
+    monkeypatch.setattr(pfj, "lookup_norwegian_name", lambda name: "Purre")
+    monkeypatch.setattr(pfj, "nibio_get_data",
+                         lambda *a, **k: json.dumps({"data": [{"aar": 2024, "kvantum": 123}]}))
+
+    result = run(pfj.fetch_nibio_data("IMP1", hosts="Allium ampeloprasum"))
+
+    assert result.get("nibio_results")
+    posts = [r["post"]["name"] for r in result["nibio_results"]]
+    assert "Purre" in posts
+
+
+def test_fetch_nibio_data_falls_back_to_raw_keyword_when_no_translation(monkeypatch):
+    seen = []
+
+    def fake_list_groups(keyword):
+        seen.append(keyword)
+        return json.dumps({"groups": []})
+    monkeypatch.setattr(pfj, "nibio_list_groups", fake_list_groups)
+    monkeypatch.setattr(pfj, "lookup_norwegian_name", lambda name: None)
+
+    run(pfj.fetch_nibio_data("IMP1", hosts="Unknownus genus"))
+
+    # Direct search used the raw keyword (not translated); the subsequent
+    # posts-across-groups fallback call (empty search, "give me
+    # everything") is a separate, expected call.
+    assert "Unknownus genus" in seen
+
+
 def test_fetch_nibio_data_tries_every_host_not_just_first_three(monkeypatch):
     seen = []
 

@@ -39,6 +39,7 @@ from instructions_loader import build_justification_prompt
 
 # Direct data-source helpers (no MCP stdio subprocess)
 from nibio_query_lib import nibio_list_groups, nibio_list_posts, nibio_get_data
+from lids_flora_lib import lookup_norwegian_name
 from ssb_query_lib import toll_search_hs_codes, ssb_query_data
 
 # DAG configuration: question dependencies and sibling constraints
@@ -802,8 +803,128 @@ def build_prior_context(db_path: str, assessment_id: int, question_code: str,
 
 
 # =============================================================================
+# EVIDENCE CONTEXT INJECTION (pre-fetched SSB/NIBIO data -> researcher.context)
+# =============================================================================
+#
+# gpt-researcher's report prompt (gpt_researcher/prompts.py:294) treats
+# `query` and `context` as two structurally different slots:
+#   Information: "{context}"
+#   ---
+#   Using the above information, answer the following query or task: "{question}"
+# `question` is researcher.query — the entire string built by
+# create_research_query(), which is where prior_context (built by
+# build_ent3_ssb_context/build_nibio_context) used to embed the raw
+# pre-fetched JSON. `context` is researcher.context, populated ONLY by
+# conduct_research() from web retrieval — completely independent of
+# `query`. So the real SSB/NIBIO numbers were being framed as part of the
+# task description, not as evidence, and report_source="web" additionally
+# mandates URL citations that a JSON blob with no URL structurally cannot
+# satisfy — a double bias against ever citing the real data.
+#
+# Fix: keep narrative framing (host list, caveats, ENT1/EST1 excerpts) in
+# the query, since that legitimately shapes what conduct_research()
+# searches for, but inject the actual fetched numbers into
+# researcher.context after conduct_research() returns, framed as a
+# regular "Information" entry with a real, citable URL.
+#
+# researcher.context's type at that point depends on CURATE_SOURCES:
+# source_curator normalizes List[dict] -> a single joined string
+# ("Title: ...\nContent: ...\nSource: ...") when curation is on (our
+# default — used for ENT3 and IMP2.2), but leaves it as a list when
+# curation is off (forced off for deep-research questions: ENT2A/B, EST1,
+# EST2, IMP1). Both shapes must be handled.
+
+def _format_context_entry(title: str, href: str, body: str) -> str:
+    """Match gpt-researcher's own curated-context string format, so
+    injected evidence is indistinguishable in structure from a curated
+    web source once CURATE_SOURCES normalizes context to a string."""
+    return f"Title: {title}\nContent: {body}\nSource: {href}"
+
+
+def _inject_evidence_into_context(researcher, entries: list) -> None:
+    """Append pre-fetched evidence (SSB/NIBIO) into researcher.context —
+    genuine "Information" for the report prompt, not folded into the
+    query/task description. See module-level comment above for why."""
+    if not entries:
+        return
+    if isinstance(researcher.context, list):
+        researcher.context.extend(entries)
+    else:
+        blocks = [_format_context_entry(e["title"], e["href"], e["body"]) for e in entries]
+        existing = (researcher.context or "").strip()
+        researcher.context = ("\n\n".join([existing] + blocks) if existing
+                               else "\n\n".join(blocks))
+
+
+def ssb_evidence_entries(fetched_data: dict) -> list:
+    """Build a researcher.context entry from fetch_ssb_data()'s output —
+    one combined entry (SSB table 08801 is conceptually one source, even
+    though several commodity codes may have been queried), with a real,
+    citable statbank URL so the report's citation mechanic applies to it
+    the same way it would to any web source."""
+    results = (fetched_data or {}).get("ssb_results")
+    if not results:
+        return []
+
+    blocks = []
+    for r in results:
+        blocks.append(
+            f"Hosts: {', '.join(r['hosts'])} | Varekoder: {', '.join(r['codes'])}\n"
+            f"{json.dumps(r['data'], ensure_ascii=False)}"
+        )
+    body = (
+        "Norwegian annual import/export figures (last 5 years, all countries) from "
+        "SSB Statistics Norway table 08801 (External trade in goods, by commodity "
+        "number and country), for commodity codes resolved from this assessment's "
+        "host species. Hosts sharing a code are one traded commodity, not separate "
+        "volumes to sum:\n\n" + "\n\n".join(blocks)
+    )
+    return [{
+        "title": "SSB Statistics Norway — Table 08801, External trade in goods",
+        "href": "https://www.ssb.no/en/statbank/table/08801",
+        "body": body,
+    }]
+
+
+def nibio_evidence_entries(fetched_data: dict) -> list:
+    """Build a researcher.context entry from fetch_nibio_data()'s output,
+    with a real, citable NIBIO Totalkalkylen URL."""
+    results = (fetched_data or {}).get("nibio_results")
+    if not results:
+        return []
+
+    blocks = []
+    for r in results:
+        blocks.append(
+            f"Group {r['group']['id']} ({r['group']['name']}), "
+            f"post {r['post']['id']} ({r['post']['name']})\n"
+            f"{json.dumps(r['data'], ensure_ascii=False)}"
+        )
+    body = (
+        "Norwegian agricultural production statistics from NIBIO Totalkalkylen "
+        "(aar=year, kvantum=quantity, pris=price, verdi=value; most recent year "
+        "is a budget estimate):\n\n" + "\n\n".join(blocks)
+    )
+    return [{
+        "title": "NIBIO Totalkalkylen — Norwegian agricultural production statistics",
+        "href": "https://www.nibio.no/tjenester/totalkalkylen-statistikk",
+        "body": body,
+    }]
+
+
+# =============================================================================
 # NIBIO DIRECT DATA FETCH (IMP1, EST2, IMP2.2)
 # =============================================================================
+#
+# DISABLED — needs a careful rework (multiple known issues: group-vs-post
+# search granularity, genus-fallback picking semantically wrong species
+# for crops absent from Lid's wild flora, etc.). All helper functions
+# below are kept intact and importable; only the call site in
+# process_assessment() is gated off via NIBIO_INTEGRATION_ENABLED, so
+# IMP1/EST2/IMP2.2 fall back to plain GPT Researcher web research with no
+# NIBIO involvement. Flip this back to True once reworked.
+
+NIBIO_INTEGRATION_ENABLED = False
 
 NIBIO_QUESTIONS = {'IMP1', 'EST2', 'IMP2.2'}
 
@@ -861,33 +982,63 @@ async def fetch_nibio_data(question_code: str, hosts: str = "") -> dict:
     results = []
     seen_post_ids = set()
     for keyword in keywords:
+        # nibio_list_groups() matches search terms against Norwegian-only
+        # group names (postgruppenavnBm) — verified live: "Pinus", "Picea",
+        # "Solanum tuberosum", "Potato", "wheat" all -> 0 groups, "potet"
+        # -> 1 group. Translate the scientific host name to Norwegian
+        # first; fall back to the raw keyword if no translation exists.
+        search_term = lookup_norwegian_name(keyword) or keyword
         try:
-            groups_json = await _nibio_call(nibio_list_groups, keyword)
+            groups_json = await _nibio_call(nibio_list_groups, search_term)
             groups = json.loads(groups_json).get("groups", [])
         except Exception:
             continue
-        if not groups:
-            continue
-        for group in groups:
-            try:
-                posts_json = await _nibio_call(nibio_list_posts, group["id"])
-                posts = json.loads(posts_json).get("posts", [])
-            except Exception:
-                continue
-            selected = _select_nibio_posts(posts, question_code, keyword)
-            for post in selected:
-                if post["id"] in seen_post_ids:
-                    continue
+
+        group_post_pairs = []
+        if groups:
+            for group in groups:
                 try:
-                    data_json = await _nibio_call(nibio_get_data, post["id"], 10)
+                    posts_json = await _nibio_call(nibio_list_posts, group["id"])
+                    posts = json.loads(posts_json).get("posts", [])
                 except Exception:
                     continue
-                seen_post_ids.add(post["id"])
-                results.append({
-                    "group": group,
-                    "post": post,
-                    "data": json.loads(data_json),
-                })
+                selected = _select_nibio_posts(posts, question_code, search_term)
+                group_post_pairs.extend((group, post) for post in selected)
+        else:
+            # No group is named after this crop — most crops aren't. NIBIO's
+            # top-level groups are broad categories (e.g. "Hagebruksprodukter"
+            # covers all horticulture); specific crops like "Purre" (leek) or
+            # "Tomater" live as POSTS inside that broader group, not as their
+            # own group (verified live: nibio_list_posts(2608) contains both).
+            # Search posts across every group instead.
+            try:
+                all_groups_json = await _nibio_call(nibio_list_groups, "")
+                all_groups = json.loads(all_groups_json).get("groups", [])
+            except Exception:
+                all_groups = []
+            for group in all_groups:
+                try:
+                    posts_json = await _nibio_call(nibio_list_posts, group["id"], search_term)
+                    posts = json.loads(posts_json).get("posts", [])
+                except Exception:
+                    continue
+                # nibio_list_posts' search already filters by name match —
+                # no further _select_nibio_posts scoring needed here.
+                group_post_pairs.extend((group, post) for post in posts)
+
+        for group, post in group_post_pairs:
+            if post["id"] in seen_post_ids:
+                continue
+            try:
+                data_json = await _nibio_call(nibio_get_data, post["id"], 10)
+            except Exception:
+                continue
+            seen_post_ids.add(post["id"])
+            results.append({
+                "group": group,
+                "post": post,
+                "data": json.loads(data_json),
+            })
     return {"nibio_results": results}
 
 
@@ -938,8 +1089,9 @@ def build_nibio_context(db_path: str, assessment_id: int, question_code: str,
     if fetched_data and fetched_data.get("nibio_results"):
         lines += [
             "",
-            "PRE-FETCHED NIBIO DATA (use these figures in your justification):",
-            json.dumps(fetched_data, indent=2, ensure_ascii=False),
+            "Real NIBIO Totalkalkylen production figures for this host are provided "
+            "separately below as research evidence — cite them as NIBIO Totalkalkylen "
+            "and use them directly in your justification.",
         ]
     else:
         lines += ["", "No NIBIO data could be fetched automatically."]
@@ -1133,12 +1285,10 @@ def build_ent3_ssb_context(db_path: str, assessment_id: int,
     if fetched_data and fetched_data.get("ssb_results"):
         lines += [
             "",
-            "PRE-FETCHED SSB TABLE 08801 IMPORT DATA (complementary evidence — combine with",
-            "other sources rather than relying on it exclusively). Each entry's 'hosts' list",
-            "gives every host species that resolved to that same commodity code (SSB often",
-            "uses one genus-level code for several species) — treat these as ONE traded",
-            "commodity shared by those hosts, not separate volumes to sum:",
-            json.dumps(fetched_data, indent=2, ensure_ascii=False),
+            "Real SSB table 08801 import figures for this pathway's hosts are provided",
+            "separately below as research evidence — cite them as SSB Statistics Norway,",
+            "table 08801. Hosts sharing a commodity code (SSB often uses one genus-level",
+            "code for several species) are ONE traded commodity, not separate volumes to sum.",
         ]
     else:
         lines += [
@@ -1258,7 +1408,8 @@ async def research_justification(pest_name: str, question_code: str, question_te
                                  source_db: str = None,
                                  assessment_id: int = None,
                                  eppo_code: str = None,
-                                 context_store=None) -> str:
+                                 context_store=None,
+                                 evidence_entries: list = None) -> str:
     """Research a single justification using GPT Researcher."""
 
     pathway_text = f" (Pathway: {pathway_name})" if pathway_name else ""
@@ -1314,6 +1465,12 @@ async def research_justification(pest_name: str, question_code: str, question_te
         researcher = GPTResearcher(**researcher_kwargs)
 
         await researcher.conduct_research()
+
+        if evidence_entries:
+            # Injected into researcher.context (the report prompt's
+            # "Information" slot), not folded into query/prior_context —
+            # see the EVIDENCE CONTEXT INJECTION section above for why.
+            _inject_evidence_into_context(researcher, evidence_entries)
 
         if context_store is not None:
             try:
@@ -1430,9 +1587,11 @@ async def process_assessment(db_path: str, assessment_id: int = None,
         prior_context = build_prior_context(db_path, assessment_id, answer['code'])
 
         # IMP1, EST2, IMP2.2: inject NIBIO agricultural statistics context
+        # (currently disabled — see NIBIO_INTEGRATION_ENABLED)
         q_mcp_configs = None
+        q_evidence_entries = None
         norm_code = normalize_code(answer['code'])
-        if norm_code in NIBIO_QUESTIONS:
+        if NIBIO_INTEGRATION_ENABLED and norm_code in NIBIO_QUESTIONS:
             nibio_fetched = await fetch_nibio_data(norm_code, hosts=hosts)
             nibio_ctx = build_nibio_context(
                 db_path, assessment_id, norm_code, hosts=hosts,
@@ -1441,6 +1600,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                 (prior_context + '\n\n' + nibio_ctx).strip()
                 if prior_context else nibio_ctx
             )
+            q_evidence_entries = nibio_evidence_entries(nibio_fetched)
 
         try:
             ai_text = await research_justification(
@@ -1456,6 +1616,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                 assessment_id=assessment_id,
                 eppo_code=eppo_code,
                 context_store=context_store,
+                evidence_entries=q_evidence_entries,
             )
 
             if ai_text is not None:
@@ -1524,6 +1685,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                     # ENT3: inject SSB trade context directly.
                     # Only for pathways with a real commodity trade stream.
                     pq_mcp_configs = None
+                    pq_evidence_entries = None
                     if (normalize_code(pq['code']) == 'ENT3'
                             and pathway_uses_ssb(pathway_name)):
                         ssb_fetched = await fetch_ssb_data(pathway_name, hosts=hosts)
@@ -1534,6 +1696,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                             (prior_context + '\n\n' + ssb_ctx).strip()
                             if prior_context else ssb_ctx
                         )
+                        pq_evidence_entries = ssb_evidence_entries(ssb_fetched)
 
                     try:
                         ai_text = await research_justification(
@@ -1550,6 +1713,7 @@ async def process_assessment(db_path: str, assessment_id: int = None,
                             assessment_id=assessment_id,
                             eppo_code=eppo_code,
                             context_store=context_store,
+                            evidence_entries=pq_evidence_entries,
                         )
 
                         if ai_text is not None:
